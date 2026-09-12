@@ -112,6 +112,7 @@ MYSQL *Connect(const DatabaseInfo *info, char *error, size_t maxlength)
 	 */
 	my_bool my_true = true;
 	mysql_options(mysql, MYSQL_OPT_RECONNECT, (const char *)&my_true);
+	mysql_options(mysql, MYSQL_SET_CHARSET_NAME, "utf8mb4"); // default charset upon reconnecting
 
 	if (info->host[0] == '/')
 	{
