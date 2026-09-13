@@ -29,6 +29,8 @@
  * Version: $Id$
  */
 
+#include <inttypes.h>
+
 #include "extension.h"
 #include "cookie.h"
 #include "menus.h"
@@ -354,7 +356,7 @@ cell_t AddSettingsMenuItem(IPluginContext *pContext, const cell_t *params)
 
 	/* Track this in case the plugin unloads */
 
-	IPlugin *pPlugin = plsys->FindPluginByContext(pContext->GetContext());
+	IPlugin *pPlugin = plsys->FindPluginByContext(pContext);
 	std::vector<char *> *pList = NULL;
 
 	if (!pPlugin->GetProperty("SettingsMenuItems", (void **)&pList, false) || !pList)
@@ -424,7 +426,7 @@ cell_t AddSettingsPrefabMenuItem(IPluginContext *pContext, const cell_t *params)
 
 	/* Track this in case the plugin unloads */
 
-	IPlugin *pPlugin = plsys->FindPluginByContext(pContext->GetContext());
+	IPlugin *pPlugin = plsys->FindPluginByContext(pContext);
 	std::vector<char *> *pList = NULL;
 
 	if (!pPlugin->GetProperty("SettingsMenuItems", (void **)&pList, false) || !pList)

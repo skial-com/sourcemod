@@ -45,6 +45,7 @@
 
 #include <sourcehook.h>
 #include <sh_memory.h>
+#include <sourcepawn/vm/base-runtime.h>
 
 #if defined PLATFORM_WINDOWS
 #include <windows.h>
@@ -151,6 +152,8 @@ public:
 	}
 	virtual IPlugin *GetPlugin() override
 	{
+		if (m_current == m_list.end())
+			return nullptr;
 		return *m_current;
 	}
 	virtual void NextPlugin() override
@@ -161,7 +164,8 @@ public:
 			return;
 		}
 
-		m_current++;
+		if (m_current != m_list.end())
+			m_current++;
 	}
 	virtual void Release() override
 	{
@@ -171,7 +175,7 @@ public:
 public:
 	virtual void OnPluginDestroyed(IPlugin *plugin) override
 	{
-		if (*m_current == plugin)
+		if (m_current != m_list.end() && *m_current == plugin)
 			m_current = m_list.erase(m_current);
 		else
 			m_list.remove(static_cast<SMPlugin *>(plugin));
@@ -401,12 +405,13 @@ static cell_t PluginIterator_Next(IPluginContext *pContext, const cell_t *params
 	{
 		return pContext->ThrowNativeError("Could not read Handle %x (error %d)", hndl, err);
 	}
-
+	
 	if(!pIter->MorePlugins())
-		return 0;
-
+		return pContext->ThrowNativeError("PluginIterator %x is exhausted.", hndl);
+	
 	pIter->NextPlugin();
-	return 1;
+	
+	return pIter->MorePlugins() ? 1 : 0;
 }
 
 static cell_t PluginIterator_Plugin_get(IPluginContext *pContext, const cell_t *params)
@@ -434,7 +439,7 @@ IPlugin *GetPluginFromHandle(IPluginContext *pContext, Handle_t hndl)
 {
 	if (hndl == BAD_HANDLE)
 	{
-		return scripts->FindPluginByContext(pContext->GetContext());
+		return scripts->FindPluginByContext(pContext);
 	} else {
 		HandleError err;
 		IPlugin *pPlugin = scripts->FindPluginByHandle(hndl, &err);
@@ -553,7 +558,7 @@ static cell_t SetFailState(IPluginContext *pContext, const cell_t *params)
 	SMPlugin *pPlugin;
 
 	pContext->LocalToString(params[1], &str);
-	pPlugin = scripts->FindPluginByContext(pContext->GetContext());
+	pPlugin = scripts->FindPluginByContext(pContext);
 
 	if (params[0] == 1)
 	{
@@ -602,7 +607,7 @@ static cell_t GetSysTickCount(IPluginContext *pContext, const cell_t *params)
 
 static cell_t AutoExecConfig(IPluginContext *pContext, const cell_t *params)
 {
-	SMPlugin *plugin = scripts->FindPluginByContext(pContext->GetContext());
+	SMPlugin *plugin = scripts->FindPluginByContext(pContext);
 
 	char *cfg, *folder;
 	pContext->LocalToString(params[2], &cfg);
@@ -634,22 +639,23 @@ static cell_t MarkNativeAsOptional(IPluginContext *pContext, const cell_t *param
 {
 	char *name;
 	uint32_t idx;
+	sp::BaseRuntime *pBase = pContext->GetBaseRuntime();
 
 	pContext->LocalToString(params[1], &name);
-	if (pContext->FindNativeByName(name, &idx) != SP_ERROR_NONE)
+	if (pBase->FindNativeByName(name, &idx) != SP_ERROR_NONE)
 	{
 		/* Oops! This HAS to silently fail! */
 		return 0;
 	}
 
-	pContext->GetRuntime()->UpdateNativeBinding(idx, nullptr, SP_NTVFLAG_OPTIONAL, nullptr);
+	pBase->UpdateNativeBinding(idx, nullptr, SP_NTVFLAG_OPTIONAL, nullptr);
 	return 1;
 }
 
 static cell_t RegPluginLibrary(IPluginContext *pContext, const cell_t *params)
 {
 	char *name;
-	SMPlugin *pl = scripts->FindPluginByContext(pContext->GetContext());
+	SMPlugin *pl = scripts->FindPluginByContext(pContext);
 
 	pContext->LocalToString(params[1], &name);
 
@@ -691,7 +697,7 @@ static cell_t sm_LogAction(IPluginContext *pContext, const cell_t *params)
 			return 0;
 	}
 
-	IPlugin *pPlugin = scripts->FindPluginByContext(pContext->GetContext());
+	IPlugin *pPlugin = scripts->FindPluginByContext(pContext);
 
 	LogAction(pPlugin->GetMyHandle(), 2, params[1], params[2], buffer);
 
@@ -723,7 +729,7 @@ static cell_t LogToFile(IPluginContext *pContext, const cell_t *params)
 		}
 	}
 
-	IPlugin *pPlugin = scripts->FindPluginByContext(pContext->GetContext());
+	IPlugin *pPlugin = scripts->FindPluginByContext(pContext);
 
 	g_Logger.LogToOpenFile(fp, "[%s] %s", pPlugin->GetFilename(), buffer);
 
@@ -830,7 +836,7 @@ static cell_t RequireFeature(IPluginContext *pContext, const cell_t *params)
 		char buffer[255];
 		char *msg = buffer;
 		char default_message[255];
-		SMPlugin *pPlugin = scripts->FindPluginByContext(pContext->GetContext());
+		SMPlugin *pPlugin = scripts->FindPluginByContext(pContext);
 
 		DetectExceptions eh(pContext);
 		g_pSM->FormatString(buffer, sizeof(buffer), pContext, params, 3);
@@ -1202,7 +1208,7 @@ static cell_t LogStackTrace(IPluginContext *pContext, const cell_t *params)
 	std::vector<std::string> arr = g_DbgReporter.GetStackTrace(it);
 	pContext->DestroyFrameIterator(it);
 
-	IPlugin *pPlugin = scripts->FindPluginByContext(pContext->GetContext());
+	IPlugin *pPlugin = scripts->FindPluginByContext(pContext);
 
 	g_Logger.LogError("[SM] Stack trace requested: %s", buffer);
 	g_Logger.LogError("[SM] Called from: %s", pPlugin->GetFilename());

@@ -34,12 +34,14 @@
 #include <stdarg.h>
 #include "DebugReporter.h"
 #include "Logger.h"
+#include "sourcepawn/vm/base-runtime.h"
+#include "sourcepawn/vm/environment.h"
 
 DebugReport g_DbgReporter;
 
 void DebugReport::OnSourceModAllInitialized()
 {
-	g_pSourcePawn->SetDebugListener(this);
+	g_pPawnEnv->SetDebugListener(this);
 }
 
 void DebugReport::OnDebugSpew(const char *msg, ...)
@@ -68,10 +70,10 @@ void DebugReport::GenerateErrorVA(IPluginContext *ctx, cell_t func_idx, int err,
 	char buffer[512];
 	ke::SafeVsprintf(buffer, sizeof(buffer), message, ap);
 
-	const char *plname = pluginsys->FindPluginByContext(ctx->GetContext())->GetFilename();
+	const char *plname = pluginsys->FindPluginByContext(ctx)->GetFilename();
 
 	if (err >= 0) {
-		const char *error = g_pSourcePawn2->GetErrorString(err);
+		const char *error = g_pPawnEnv->GetErrorString(err);
 		if (error)
 			g_Logger.LogError("[SM] Plugin \"%s\" encountered error %d: %s", plname, err, error);
 		else
@@ -86,50 +88,11 @@ void DebugReport::GenerateErrorVA(IPluginContext *ctx, cell_t func_idx, int err,
 		{
 			func_idx >>= 1;
 			sp_public_t *function;
-			if (ctx->GetRuntime()->GetPublicByIndex(func_idx, &function) == SP_ERROR_NONE)
+			if (ctx->GetBaseRuntime()->GetPublicByIndex(func_idx, &function) == SP_ERROR_NONE)
 			{
 				g_Logger.LogError("[SM] Unable to call function \"%s\" due to above error(s).", function->name);
 			}
 		}
-	}
-}
-
-void DebugReport::GenerateCodeError(IPluginContext *pContext, uint32_t code_addr, int err, const char *message, ...)
-{
-	va_list ap;
-	char buffer[512];
-
-	va_start(ap, message);
-	ke::SafeVsprintf(buffer, sizeof(buffer), message, ap);
-	va_end(ap);
-
-	const char *plname = pluginsys->FindPluginByContext(pContext->GetContext())->GetFilename();
-	const char *error = g_pSourcePawn2->GetErrorString(err);
-
-	if (error)
-	{
-		g_Logger.LogError("[SM] Plugin \"%s\" encountered error %d: %s", plname, err, error);
-	} else {
-		g_Logger.LogError("[SM] Plugin \"%s\" encountered unknown error %d", plname, err);
-	}
-
-	g_Logger.LogError("[SM] %s", buffer);
-
-	IPluginDebugInfo *pDebug;
-	if ((pDebug = pContext->GetRuntime()->GetDebugInfo()) == NULL)
-	{
-		g_Logger.LogError("[SM] Debug mode is not enabled for \"%s\"", plname);
-		g_Logger.LogError("[SM] To enable debug mode, edit plugin_settings.cfg, or type: sm plugins debug %d on",
-			_GetPluginIndex(pContext));
-		return;
-	}
-
-	const char *name;
-	if (pDebug->LookupFunction(code_addr, &name) == SP_ERROR_NONE)
-	{
-		g_Logger.LogError("[SM] Unable to call function \"%s\" due to above error(s).", name);
-	} else {
-		g_Logger.LogError("[SM] Unable to call function (name unknown, address \"%p\").", code_addr);
 	}
 }
 
@@ -173,7 +136,7 @@ void DebugReport::ReportError(const IErrorReport &report, IFrameIterator &iter)
 		{
 			if (iter.IsScriptedFrame()) 
 			{
-				IPlugin *plugin = pluginsys->FindPluginByContext(iter.Context()->GetContext());
+				IPlugin *plugin = pluginsys->FindPluginByContext(iter.Context());
 				if (plugin)
 				{
 					blame = plugin->GetFilename();

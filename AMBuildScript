@@ -42,11 +42,10 @@ class SMConfig(object):
     self.sdks = {}
     self.sdk_targets = []
     self.binaries = []
-    self.spvm = []
     self.extensions = []
     self.generated_headers = None
     self.mms_root = None
-    self.mysql_root = {}
+    self.mariadb_root = {}
     self.spcomp = None
     self.spcomp_bins = []
     self.smx_files = {}
@@ -142,28 +141,26 @@ class SMConfig(object):
 
     if builder.options.hasMySql:
       if 'x86' in self.target_archs:
-        if builder.options.mysql_path:
-          self.mysql_root['x86'] = builder.options.mysql_path
+        mariadb_path = getattr(builder.options, 'mariadb_path',
+                               getattr(builder.options, 'mysql_path', None))
+        if mariadb_path:
+          self.mariadb_root['x86'] = mariadb_path
         else:
-          for i in range(10):
-            self.mysql_root['x86'] = ResolveEnvPath('MYSQL57', 'mysql-5.' + str(i))
-            if self.mysql_root['x86']:
-              break
-        if not self.mysql_root['x86'] or not os.path.isdir(self.mysql_root['x86']):
-          raise Exception('Could not find a path to MySQL. Configure with --no-mysql to disable it.')
-        self.mysql_root['x86'] = Normalize(self.mysql_root['x86'])
+          self.mariadb_root['x86'] = ResolveEnvPath('MARIADB_CONNECTOR_C', 'mariadb-connector-c-x86')
+        if not self.mariadb_root['x86'] or not os.path.isdir(self.mariadb_root['x86']):
+          raise Exception('Could not find an x86 MariaDB Connector/C path. Configure with --no-mysql to disable it.')
+        self.mariadb_root['x86'] = Normalize(self.mariadb_root['x86'])
 
       if 'x86_64' in self.target_archs:
-        if builder.options.mysql64_path:
-          self.mysql_root['x86_64'] = builder.options.mysql64_path
+        mariadb64_path = getattr(builder.options, 'mariadb64_path',
+                                 getattr(builder.options, 'mysql64_path', None))
+        if mariadb64_path:
+          self.mariadb_root['x86_64'] = mariadb64_path
         else:
-          for i in range(10):
-            self.mysql_root['x86_64'] = ResolveEnvPath('MYSQL57_64', 'mysql-5.' + str(i) + '-x86_64')
-            if self.mysql_root['x86_64']:
-              break
-        if not self.mysql_root['x86_64'] or not os.path.isdir(self.mysql_root['x86_64']):
-          raise Exception('Could not find a path to 64-bit MySQL!')
-        self.mysql_root['x86_64'] = Normalize(self.mysql_root['x86_64'])
+          self.mariadb_root['x86_64'] = ResolveEnvPath('MARIADB_CONNECTOR_C_64', 'mariadb-connector-c-x86_64')
+        if not self.mariadb_root['x86_64'] or not os.path.isdir(self.mariadb_root['x86_64']):
+          raise Exception('Could not find an x86_64 MariaDB Connector/C path.')
+        self.mariadb_root['x86_64'] = Normalize(self.mariadb_root['x86_64'])
 
   def configure(self):
     builder.AddConfigureFile('pushbuild.txt')
@@ -197,9 +194,7 @@ class SMConfig(object):
     elif cxx.family == 'msvc':
       self.configure_msvc(cxx)
 
-    # Optimizaiton
-    if builder.options.opt == '1':
-      cxx.defines += ['NDEBUG']
+    # Optimization flags are applied separately, earlier in configure_optimize so that the SDK static libs inherit them.
 
     # Debugging
     if builder.options.debug == '1':
@@ -228,6 +223,32 @@ class SMConfig(object):
         os.path.join(builder.sourcePath, 'versionlib'),
       ]
 
+  def configure_optimize(self, cxx):
+    if builder.options.opt != '1':
+      return
+    cxx.defines += ['NDEBUG']
+    if cxx.like('gcc'):
+      if self.enable_asan:
+        cxx.cflags += ['-O1']
+      else:
+        cxx.cflags += ['-O3']
+    elif cxx.family == 'msvc':
+      cxx.cflags += ['/Ox', '/Zo']
+      cxx.linkflags += ['/OPT:ICF', '/OPT:REF']
+
+  def configure_pre_sdk(self, cxx):
+    self.configure_optimize(cxx)
+
+    if not cxx.like('gcc'):
+      return
+
+    if cxx.target.arch in ['x86', 'x86_64']:
+      cxx.cflags += ['-msse']
+      if cxx.family == 'gcc':
+        cxx.cflags += ['-mfpmath=sse']
+    if cxx.target.platform == 'linux' and cxx.target.arch == 'x86':
+      cxx.cflags += ['-mstackrealign']
+
   def configure_gcc(self, cxx):
     cxx.defines += [
       'stricmp=strcasecmp',
@@ -249,10 +270,8 @@ class SMConfig(object):
       '-Wno-dangling-else',
       '-fvisibility=hidden',
     ]
-    if cxx.target.arch in ['x86', 'x86_64']:
-      cxx.cflags += ['-msse']
 
-    cxx.cxxflags += ['-std=c++17']
+    cxx.cxxflags += ['-std=c++20']
 
     cxx.cxxflags += [
       '-fno-threadsafe-statics',
@@ -305,18 +324,21 @@ class SMConfig(object):
         ]
     if have_clang or (cxx.version >= 'gcc-4.5'):
         cxx.cxxflags += ['-Wno-reorder']
-    if have_clang and cxx.version >= 'clang-18.0':
+
+    if cxx.version >= 'clang-21.0':
         cxx.cflags += ['-Wno-uninitialized-const-pointer']
 
+    if cxx.version >= 'clang-16.0' or cxx.version >= 'apple-clang-15.0':
+        cxx.cxxflags += ['-Wno-deprecated-anon-enum-enum-conversion']
+
+    # C++20 deprecates volatile ++/-- and compound assignment (P1152R4).
+    if cxx.version >= 'clang-12.0' or cxx.version >= 'apple-clang-13.0':
+        cxx.cxxflags += ['-Wno-deprecated-volatile']
+
     if have_gcc:
-      cxx.cflags += ['-mfpmath=sse']
       cxx.cflags += ['-Wno-maybe-uninitialized']
 
-    if builder.options.opt == '1':
-      if self.enable_asan:
-        cxx.cflags += ['-O1']
-      else:
-        cxx.cflags += ['-O3']
+    # Optimization flags are applied separately, earlier in configure_optimize so that the SDK static libs inherit them.
 
     # Don't omit the frame pointer.
     cxx.cflags += ['-fno-omit-frame-pointer']
@@ -343,7 +365,7 @@ class SMConfig(object):
       '/EHsc',
       '/GR-',
       '/TP',
-      '/std:c++17',
+      '/std:c++20',
     ]
     cxx.linkflags += [
       'kernel32.lib',
@@ -360,9 +382,7 @@ class SMConfig(object):
       'odbccp32.lib',
     ]
 
-    if builder.options.opt == '1':
-      cxx.cflags += ['/Ox', '/Zo']
-      cxx.linkflags += ['/OPT:ICF', '/OPT:REF']
+    # Optimization flags are applied separately, earlier in configure_optimize so that the SDK static libs inherit them.
 
     if builder.options.debug == '1':
       cxx.cflags += ['/Od', '/RTC1']
@@ -424,19 +444,34 @@ class SMConfig(object):
         return lambda builder, name: self.StaticLibrary(builder, cxx, name)
       extra_vars = {'Configure': get_configure_fn(cxx)}
       libamtl = builder.Build('public/amtl/amtl/AMBuilder', extra_vars)
-      self.libamtl[cxx.target.arch] = libamtl.binary
+      self.libamtl[cxx.target] = libamtl.binary
 
-  def AddVersioning(self, binary):
+  def BinaryOutputName(self, binary, binary_type):
+    target = binary.compiler.target
+    if binary_type == 'program':
+      name_fn = binary.compiler.vendor.nameForExecutable
+    elif binary_type == 'library':
+      name_fn = binary.compiler.vendor.nameForSharedLibrary
+    else:
+      raise Exception('Unsupported binary type: {}'.format(binary_type))
+
+    try:
+      return name_fn(binary.name_, target)
+    except TypeError:
+      # Older AMBuild versions did not require the target argument.
+      return name_fn(binary.name_)
+
+  def AddVersioning(self, binary, binary_type):
     if binary.compiler.target.platform == 'windows':
       binary.sources += ['version.rc']
       binary.compiler.rcdefines += [
-        'BINARY_NAME="{0}"'.format(binary.outputFile),
+        'BINARY_NAME="{0}"'.format(self.BinaryOutputName(binary, binary_type)),
         'RC_COMPILE',
       ]
       if self.use_auto_versioning():
         binary.compiler.rcdefines += ['SM_GENERATED_BUILD']
     elif binary.compiler.target.platform == 'mac':
-      if binary.type == 'library':
+      if binary_type == 'library':
         binary.compiler.postlink += [
           '-compatibility_version', '1.0.0',
           '-current_version', self.productVersion
@@ -448,7 +483,7 @@ class SMConfig(object):
     
   def LibraryBuilder(self, compiler, name):
     binary = compiler.Library(name)
-    self.AddVersioning(binary)
+    self.AddVersioning(binary, 'library')
     if binary.compiler.like('msvc'):
       binary.compiler.linkflags += ['/SUBSYSTEM:WINDOWS']
     self.AddCxxCompat(binary)
@@ -463,7 +498,7 @@ class SMConfig(object):
 
   def ProgramBuilder(self, compiler, name):
     binary = compiler.Program(name)
-    self.AddVersioning(binary)
+    self.AddVersioning(binary, 'program')
     if '-static-libgcc' in binary.compiler.linkflags:
       binary.compiler.linkflags.remove('-static-libgcc')
     if self.enable_asan:
@@ -553,14 +588,14 @@ class SMConfig(object):
     binary = project.Configure(compiler, name,
                                '{0} - {1} {2}'.format(self.tag, sdk['name'], compiler.target.arch))
     self.AddCxxCompat(binary)
-    self.AddVersioning(binary)
+    self.AddVersioning(binary, 'library')
     return self.ConfigureForHL2(context, binary, sdk)
 
   def HL2ExtConfig(self, project, context, compiler, name, sdk):
     binary = project.Configure(compiler, name,
                                '{0} - {1} {2}'.format(self.tag, sdk['name'], compiler.target.arch))
     self.AddCxxCompat(binary)
-    self.AddVersioning(binary)
+    self.AddVersioning(binary, 'library')
     self.ConfigureForHL2(context, binary, sdk)
     self.ConfigureForExtension(context, binary.compiler)
     return binary
@@ -573,6 +608,10 @@ if getattr(builder, 'target', None) is not None:
 
 SM = SMConfig()
 SM.detectProductVersion()
+# Apply settings that SDK static libraries must inherit to the base compilers
+# before detectSDKs() clones them.
+for cxx in SM.all_targets:
+  SM.configure_pre_sdk(cxx)
 if not getattr(builder.options, 'scripting_only', False):
   SM.detectSDKs()
 SM.configure()
@@ -647,15 +686,12 @@ for spcomp in SP.spcomp:
         SM.spcomp = spcomp
     SM.spcomp_bins.append(spcomp)
 
+for spcomp in SP.oldspcomp:
+    SM.spcomp_bins.append(spcomp)
+
 # If we have a universal binary, ignore all other spcomps.
 if SM.spcomp.target.arch == 'universal':
     SM.spcomp_bins = [SM.spcomp]
-
-if not getattr(builder.options, 'scripting_only', False):
-  for cxx in SM.all_targets:
-    SM.spvm += [
-      SP.libsourcepawn[cxx.target.arch]
-    ]
 
 if getattr(builder.options, 'scripting_only', False):
   BuildScripts = [
@@ -691,7 +727,7 @@ else:
       'tools/buildbot/PackageScript',
     ]
 
-builder.Build(BuildScripts, { 'SM': SM })
+builder.Build(BuildScripts, { 'SM': SM, 'SP': SP })
 
 if builder.options.breakpad_dump:
   builder.Build('tools/buildbot/BreakpadSymbols', { 'SM': SM })

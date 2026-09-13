@@ -38,6 +38,7 @@
 #include <sm_platform.h>
 #include <const.h>
 #include <IBinTools.h>
+#include <thread>
 
 //#define SDKHOOKSDEBUG
 
@@ -104,6 +105,7 @@ CGlobalVars *gpGlobals;
 std::vector<CVTableList *> g_HookList[SDKHook_MAXHOOKS];
 
 IBinTools *g_pBinTools = NULL;
+static std::thread::id g_MainThreadId;
 ICvar *icvar = NULL;
 
 #if SOURCE_ENGINE >= SE_ORANGEBOX
@@ -199,6 +201,8 @@ SH_DECL_MANUALHOOK0(CanBeAutobalanced, 0, 0, 0, bool);
  */
 bool SDKHooks::SDK_OnLoad(char *error, size_t maxlength, bool late)
 {
+	g_MainThreadId = std::this_thread::get_id();
+
 	char buffer[256];
 	g_pSM->BuildPath(Path_SM, buffer, sizeof(buffer)-1, "/extensions/sdkhooks.ext." PLATFORM_LIB_EXT);
 	if (libsys->PathExists(buffer) && libsys->IsPathFile(buffer))
@@ -495,6 +499,11 @@ FeatureStatus SDKHooks::GetFeatureStatus(FeatureType type, const char *name)
 
 static void PopulateCallbackList(const std::vector<HookList> &source, std::vector<IPluginFunction *> &destination, int entity)
 {
+	// SourcePawn cannot be called from worker threads. This can happen on some
+	// engine variants, where the engine invokes ShouldCollide off-thread.
+	if (g_MainThreadId != std::this_thread::get_id())
+		return;
+	
 	destination.reserve(8);
 	for (size_t iter = 0; iter < source.size(); ++iter)
 	{

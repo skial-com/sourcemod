@@ -58,10 +58,7 @@ SH_DECL_HOOK0(IVEngineServer, GetMapEntitiesString, SH_NOATTRIB, 0, const char *
 
 SourceModBase g_SourceMod;
 
-ke::RefPtr<ke::SharedLib> g_JIT;
 SourceHook::String g_BaseDir;
-ISourcePawnEngine *g_pSourcePawn = NULL;
-ISourcePawnEngine2 *g_pSourcePawn2 = NULL;
 ISourcePawnEnvironment *g_pPawnEnv = NULL;
 IdentityToken_t *g_pCoreIdent = NULL;
 IForward *g_pOnMapInit = nullptr;
@@ -78,20 +75,6 @@ ConVar sm_basepath("sm_basepath", "addons\\sourcemod", 0, "SourceMod base path (
 #elif defined PLATFORM_LINUX || defined PLATFORM_APPLE
 ConVar sm_basepath("sm_basepath", "addons/sourcemod", 0, "SourceMod base path (set via command line)");
 #endif
-
-void ShutdownJIT()
-{
-	if (g_pPawnEnv) {
-		g_pPawnEnv->Shutdown();
-		delete g_pPawnEnv;
-
-		g_pPawnEnv = NULL;
-		g_pSourcePawn2 = NULL;
-		g_pSourcePawn = NULL;
-	}
-
-	g_JIT = nullptr;
-}
 
 SourceModBase::SourceModBase()
 {
@@ -134,9 +117,7 @@ ConfigResult SourceModBase::OnSourceModConfigChanged(const char *key,
 	{
 		sm_disable_jit = (strcasecmp(value, "yes") == 0) ? true : false;
 
-		if (g_pSourcePawn2) {
-			g_pSourcePawn2->SetJitEnabled(!sm_disable_jit);
-		}
+		logicore.SetJitEnabled(!sm_disable_jit);
 
 		return ConfigResult_Accept;
 	}
@@ -160,9 +141,7 @@ ConfigResult SourceModBase::OnSourceModConfigChanged(const char *key,
 			return ConfigResult_Reject;
 		}
 
-		if (g_pPawnEnv) {
-			g_pPawnEnv->SetDebugMetadataFlags(jit_metadata_flags);
-		}
+		logicore.SetDebugMetadataFlags(jit_metadata_flags);
 
 		return ConfigResult_Accept;
 	}
@@ -210,70 +189,10 @@ bool SourceModBase::InitializeSourceMod(char *error, size_t maxlength, bool late
 		return false;
 	}
 
+	sCoreProviderImpl.InitializeBridge();
+
 	/* There will always be a path by this point, since it was force-set above. */
 	m_GotBasePath = true;
-
-#if defined KE_ARCH_X86
-# define SOURCEPAWN_DLL "sourcepawn.jit.x86"
-#else
-# define SOURCEPAWN_DLL "sourcepawn.vm"
-#endif
-
-	/* Attempt to load the JIT! */
-	char file[PLATFORM_MAX_PATH];
-	char myerror[255];
-	g_SMAPI->PathFormat(file, sizeof(file), "%s/bin/" PLATFORM_ARCH_FOLDER SOURCEPAWN_DLL ".%s",
-		GetSourceModPath(),
-		PLATFORM_LIB_EXT
-		);
-
-	g_JIT = ke::SharedLib::Open(file, myerror, sizeof(myerror));
-	if (!g_JIT)
-	{
-		if (error && maxlength)
-		{
-			ke::SafeSprintf(error, maxlength, "%s (failed to load bin/" PLATFORM_ARCH_FOLDER SOURCEPAWN_DLL ".%s)", 
-				myerror,
-				PLATFORM_LIB_EXT);
-		}
-		return false;
-	}
-
-	GetSourcePawnFactoryFn factoryFn =
-	  g_JIT->get<decltype(factoryFn)>("GetSourcePawnFactory");
-
-	if (!factoryFn) {
-		if (error && maxlength)
-			ke::SafeStrcpy(error, maxlength, "SourcePawn library is out of date");
-		ShutdownJIT();
-		return false;
-	}
-
-	ISourcePawnFactory *factory = factoryFn(SOURCEPAWN_API_VERSION);
-	if (!factory) {
-		if (error && maxlength)
-			ke::SafeStrcpy(error, maxlength, "SourcePawn library is out of date");
-		ShutdownJIT();
-		return false;
-	}
-
-	g_pPawnEnv = factory->NewEnvironment();
-	if (!g_pPawnEnv) {
-		if (error && maxlength)
-			ke::SafeStrcpy(error, maxlength, "Could not create a SourcePawn environment!");
-		ShutdownJIT();
-		return false;
-	}
-
-	g_pSourcePawn = g_pPawnEnv->APIv1();
-	g_pSourcePawn2 = g_pPawnEnv->APIv2();
-
-	g_pSourcePawn2->SetDebugListener(logicore.debugger);
-
-	if (sm_disable_jit)
-		g_pSourcePawn2->SetJitEnabled(!sm_disable_jit);
-
-	g_pPawnEnv->SetDebugMetadataFlags(jit_metadata_flags);
 
 	sSourceModInitialized = true;
 
@@ -297,8 +216,6 @@ void SourceModBase::StartSourceMod(bool late)
 
 	enginePatch = SH_GET_CALLCLASS(engine);
 	gamedllPatch = SH_GET_CALLCLASS(gamedll);
-
-	sCoreProviderImpl.InitializeBridge();
 
 	/* Initialize CoreConfig to get the SourceMod base path properly - this parses core.cfg */
 	g_CoreConfig.Initialize();
@@ -353,22 +270,6 @@ void SourceModBase::StartSourceMod(bool late)
 	if (disabled == NULL || strcasecmp(disabled, "yes") != 0)
 	{
 		extsys->LoadAutoExtension("updater.ext." PLATFORM_LIB_EXT);
-	}
-
-	const char *timeout = GetCoreConfigValue("SlowScriptTimeout");
-	if (timeout == NULL)
-	{
-		timeout = "8";
-	}
-	if (atoi(timeout) != 0)
-	{
-		g_pSourcePawn2->InstallWatchdogTimer(atoi(timeout) * 1000);
-	}
-
-	const char *linedebugger = GetCoreConfigValue("EnableLineDebugging");
-	if (linedebugger != NULL && strcasecmp(linedebugger, "yes") == 0)
-	{
-		g_pPawnEnv->EnableDebugBreak();
 	}
 
 	SH_ADD_HOOK(IServerGameDLL, Think, gamedll, SH_MEMBER(logicore.callbacks, &IProviderCallbacks::OnThink), false);
@@ -575,7 +476,8 @@ void SourceModBase::CloseSourceMod()
 
 	/* Rest In Peace */
 	sCoreProviderImpl.ShutdownBridge();
-	ShutdownJIT();
+
+	g_pPawnEnv = NULL;
 }
 
 void SourceModBase::ShutdownServices()
@@ -726,7 +628,7 @@ const char *SourceModBase::GetGameFolderName() const
 
 ISourcePawnEngine *SourceModBase::GetScriptingEngine()
 {
-	return g_pSourcePawn;
+	return g_pPawnEnv;
 }
 
 IVirtualMachine *SourceModBase::GetScriptingVM()

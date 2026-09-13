@@ -38,6 +38,7 @@
 #include <IHandleSys.h>
 #include <IForwardSys.h>
 #include <IPlayerHelpers.h>
+#include <sourcepawn/vm/environment.h>
 #include "ExtensionSys.h"
 #include "GameConfigs.h"
 #include "common_logic.h"
@@ -98,8 +99,8 @@ void CPlugin::InitIdentity()
 
 	m_ident = g_ShareSys.CreateIdentity(g_PluginIdent, this);
 	m_handle = handlesys->CreateHandle(g_PluginType, this, g_PluginSys.GetIdentity(), g_PluginSys.GetIdentity(), NULL);
-	m_pRuntime->GetDefaultContext()->SetKey(1, m_ident);
-	m_pRuntime->GetDefaultContext()->SetKey(2, (IPlugin *)this);
+	m_pRuntime->SetKey(1, m_ident);
+	m_pRuntime->SetKey(2, (IPlugin *)this);
 }
 
 void CPlugin::DestroyIdentity()
@@ -258,14 +259,54 @@ void CPlugin::EvictWithError(PluginStatus status, const char *error_fmt, ...)
 	}
 }
 
+// Pstruct fields are stored in the .pstruct_glb table, not in .pubvars.
+// v1 images have no pstruct table, so callers fall back to legacy reads.
+static bool GetPstructStringField(sp::SmxImage* image, const sp::smx_pstruct_global* glb,
+                                  const char* field, std::string* out)
+{
+	std::variant<std::string, cell_t> v;
+	if (image->GetPstructValue(glb, field, &v) != SP_ERROR_NONE ||
+	    !std::holds_alternative<std::string>(v))
+	{
+		return false;
+	}
+	*out = std::get<std::string>(std::move(v));
+	return true;
+}
+
+static bool GetPstructBoolField(sp::SmxImage* image, const sp::smx_pstruct_global* glb,
+                                const char* field, bool* out)
+{
+	std::variant<std::string, cell_t> v;
+	if (image->GetPstructValue(glb, field, &v) != SP_ERROR_NONE ||
+	    !std::holds_alternative<cell_t>(v))
+	{
+		return false;
+	}
+	*out = std::get<cell_t>(v) != 0;
+	return true;
+}
+
 bool CPlugin::ReadInfo()
 {
 	/* Now grab the info */
 	uint32_t idx;
 	IPluginContext *base = GetBaseContext();
-	int err = base->FindPubvarByName("myinfo", &idx);
+	int err;
 
-	if (err == SP_ERROR_NONE) {
+	sp::SmxImage* image = base->GetBaseRuntime()->image();
+	if (const sp::smx_pstruct_global* myinfo = image->FindPstructGlobal("myinfo")) {
+		auto update_field = [&](const char* field, std::string *dest) {
+			if (!GetPstructStringField(image, myinfo, field, dest))
+				*dest = "";
+		};
+
+		update_field("name", &info_name_);
+		update_field("description", &info_description_);
+		update_field("author", &info_author_);
+		update_field("version", &info_version_);
+		update_field("url", &info_url_);
+	} else if ((err = base->FindPubvarByName("myinfo", &idx)) == SP_ERROR_NONE) {
 		struct sm_plugininfo_c_t
 		{
 			cell_t name;
@@ -330,10 +371,10 @@ bool CPlugin::ReadInfo()
 	else
 		m_MaxClientsVar = nullptr;
 
-	if (base->FindPubvarByName("PointerSize", &idx) == SP_ERROR_NONE) {
+	if (base->FindPubvarByName("Address_PointerSize", &idx) == SP_ERROR_NONE) {
 		sp_pubvar_t* var = nullptr;
 		if (base->GetPubvarByIndex(idx, &var) == SP_ERROR_NONE && var) {
-			*var->offs = sizeof(void*);
+			*reinterpret_cast<int64_t*>(var->offs) = sizeof(void*);
 		}
 	}
 
@@ -479,21 +520,15 @@ void CPlugin::Call_OnLibraryAdded(const char *lib)
 	pFunction->Execute(&result);
 }
 
-void *CPlugin::GetPluginStructure()
-{
-	return NULL;
-}
-
 // Only called during plugin construction.
 bool CPlugin::TryCompile()
 {
 	char fullpath[PLATFORM_MAX_PATH];
 	g_pSM->BuildPath(Path_SM, fullpath, sizeof(fullpath), "plugins/%s", m_filename);
 
-	char loadmsg[255];
-	m_pRuntime.reset(g_pSourcePawn2->LoadBinaryFromFile(fullpath, loadmsg, sizeof(loadmsg)));
+	m_pRuntime.reset(g_pPawnEnv->LoadBinaryFromFile(fullpath));
 	if (!m_pRuntime) {
-		EvictWithError(Plugin_BadLoad, "Unable to load plugin (%s)", loadmsg);
+		EvictWithError(Plugin_BadLoad, "Unable to load plugin (%s)", m_filename);
 		return false;
 	}
 
@@ -513,11 +548,6 @@ IPluginContext *CPlugin::GetBaseContext()
 	}
 
 	return m_pRuntime->GetDefaultContext();
-}
-
-sp_context_t *CPlugin::GetContext()
-{
-	return NULL;
 }
 
 const char *CPlugin::GetFilename()
@@ -1040,7 +1070,8 @@ void CPluginManager::LoadAutoPlugin(const char *plugin)
 	LoadRes res;
 	if ((res=LoadPlugin(&pl, plugin, false, PluginType_MapUpdated)) == LoadRes_Failure)
 	{
-		g_Logger.LogError("[SM] Failed to load plugin \"%s\": %s.", plugin, pl->GetErrorMsg());
+		if (!pl->IsSilentlyFailed())
+			g_Logger.LogError("[SM] Failed to load plugin \"%s\": %s.", plugin, pl->GetErrorMsg());
 	}
 
 	if (res == LoadRes_Successful || res == LoadRes_Failure)
@@ -1149,50 +1180,93 @@ bool CPluginManager::FindOrRequirePluginDeps(CPlugin *pPlugin)
 	uint32_t num = pBase->GetPubVarsNum();
 	sp_pubvar_t *pubvar;
 	char *name, *file;
-	char pathfile[PLATFORM_MAX_PATH];
 
-	for (uint32_t i=0; i<num; i++) {
-		if (pBase->GetPubvarByIndex(i, &pubvar) != SP_ERROR_NONE)
-			continue;
-		if (strncmp(pubvar->name, "__pl_", 5) == 0) {
+	char pathfile[PLATFORM_MAX_PATH];
+	libsys->GetFileFromPath(pathfile, sizeof(pathfile), pPlugin->GetFilename());
+
+	struct PluginDep
+	{
+		std::string pubvar_name;
+		std::string name;
+		std::string file;
+		bool required;
+	};
+
+	std::vector<PluginDep> deps;
+
+	sp::SmxImage* image = pBase->GetBaseRuntime()->image();
+
+	if (image->pstruct_global_count()) {
+		for (uint32_t i = 0; i < image->pstruct_global_count(); i++) {
+			const sp::smx_pstruct_global* glb = image->pstruct_globals() + i;
+			const char* pubvar_name = image->names() + glb->name;
+			if (strncmp(pubvar_name, "__pl_", 5) != 0)
+				continue;
+
+			PluginDep dep;
+			dep.pubvar_name = pubvar_name;
+			dep.required = false;
+			if (!GetPstructStringField(image, glb, "file", &dep.file))
+				continue;
+			if (!GetPstructStringField(image, glb, "name", &dep.name))
+				continue;
+			GetPstructBoolField(image, glb, "required", &dep.required);
+			deps.push_back(std::move(dep));
+		}
+	} else {
+		for (uint32_t i=0; i<num; i++) {
+			if (pBase->GetPubvarByIndex(i, &pubvar) != SP_ERROR_NONE)
+				continue;
+			if (strncmp(pubvar->name, "__pl_", 5) != 0)
+				continue;
+
 			pl = (_pl *)pubvar->offs;
 			if (pBase->LocalToString(pl->file, &file) != SP_ERROR_NONE)
 				continue;
 			if (pBase->LocalToString(pl->name, &name) != SP_ERROR_NONE)
 				continue;
-			libsys->GetFileFromPath(pathfile, sizeof(pathfile), pPlugin->GetFilename());
-			if (strcmp(pathfile, file) == 0)
-				continue;
-			if (pl->required == false) {
-				IPluginFunction *pFunc;
-				char buffer[64];
-				ke::SafeSprintf(buffer, sizeof(buffer), "__pl_%s_SetNTVOptional", &pubvar->name[5]);
-				if ((pFunc=pBase->GetFunctionByName(buffer))) {
-					cell_t res;
-					if (pFunc->Execute(&res) != SP_ERROR_NONE) {
-						pPlugin->EvictWithError(Plugin_Failed, "Fatal error during initializing plugin load");
-						return false;
-					}
-				}
-			} else {
-				/* Check that we aren't registering the same library twice */
-				pPlugin->AddRequiredLib(name);
 
-				CPlugin *found = nullptr;
-				for (PluginIter iter(m_plugins); !iter.done(); iter.next()) {
-					CPlugin *pl = (*iter);
-					if (pl->HasLibrary(name)) {
-						found = pl;
-						break;
-					}
-				}
-				if (!found) {
-					pPlugin->EvictWithError(Plugin_Failed, "Could not find required plugin \"%s\"", name);
+			PluginDep dep;
+			dep.pubvar_name = pubvar->name;
+			dep.name = name;
+			dep.file = file;
+			dep.required = !!pl->required;
+			deps.push_back(std::move(dep));
+		}
+	}
+
+	for (const PluginDep& dep : deps) {
+		if (strcmp(pathfile, dep.file.c_str()) == 0)
+			continue;
+		if (!dep.required) {
+			IPluginFunction *pFunc;
+			char buffer[64];
+			ke::SafeSprintf(buffer, sizeof(buffer), "__pl_%s_SetNTVOptional", &dep.pubvar_name[5]);
+			if ((pFunc=pBase->GetFunctionByName(buffer))) {
+				cell_t res;
+				if (pFunc->Execute(&res) != SP_ERROR_NONE) {
+					pPlugin->EvictWithError(Plugin_Failed, "Fatal error during initializing plugin load");
 					return false;
 				}
-
-				found->AddDependent(pPlugin);
 			}
+		} else {
+			/* Check that we aren't registering the same library twice */
+			pPlugin->AddRequiredLib(dep.name.c_str());
+
+			CPlugin *found = nullptr;
+			for (PluginIter iter(m_plugins); !iter.done(); iter.next()) {
+				CPlugin *other = (*iter);
+				if (other->HasLibrary(dep.name.c_str())) {
+					found = other;
+					break;
+				}
+			}
+			if (!found) {
+				pPlugin->EvictWithError(Plugin_Failed, "Could not find required plugin \"%s\"", dep.name.c_str());
+				return false;
+			}
+
+			found->AddDependent(pPlugin);
 		}
 	}
 
@@ -1210,6 +1284,31 @@ bool CPlugin::ForEachExtVar(const ExtVarCallback& callback)
 	} *ext;
 
 	IPluginContext *pBase = GetBaseContext();
+
+	sp::SmxImage* image = pBase->GetBaseRuntime()->image();
+	for (uint32_t i = 0; i < image->pstruct_global_count(); i++) {
+		const sp::smx_pstruct_global* glb = image->pstruct_globals() + i;
+		const char* pubvar_name = image->names() + glb->name;
+		if (strncmp(pubvar_name, "__ext_", 6) != 0)
+			continue;
+
+		ExtVar var;
+		var.autoload = false;
+		var.required = false;
+		if (!GetPstructStringField(image, glb, "file", &var.file))
+			continue;
+		if (!GetPstructStringField(image, glb, "name", &var.name))
+			continue;
+		GetPstructBoolField(image, glb, "autoload", &var.autoload);
+		GetPstructBoolField(image, glb, "required", &var.required);
+
+		if (!callback(pubvar_name, var))
+			return false;
+	}
+
+	if (image->pstruct_global_count())
+		return true;
+
 	for (uint32_t i = 0; i < pBase->GetPubVarsNum(); i++)
 	{
 		sp_pubvar_t *pubvar;
@@ -1222,14 +1321,17 @@ bool CPlugin::ForEachExtVar(const ExtVarCallback& callback)
 		ext = (_ext *)pubvar->offs;
 
 		ExtVar var;
-		if (pBase->LocalToString(ext->file, &var.file) != SP_ERROR_NONE)
+		char *str;
+		if (pBase->LocalToString(ext->file, &str) != SP_ERROR_NONE)
 			continue;
-		if (pBase->LocalToString(ext->name, &var.name) != SP_ERROR_NONE)
+		var.file = str;
+		if (pBase->LocalToString(ext->name, &str) != SP_ERROR_NONE)
 			continue;
+		var.name = str;
 		var.autoload = !!ext->autoload;
 		var.required = !!ext->required;
 
-		if (!callback(pubvar, var))
+		if (!callback(pubvar->name, var))
 			return false;
 	}
 	return true;
@@ -1271,12 +1373,12 @@ void CPlugin::SetWaitingToUnload(bool andReload)
 
 void CPluginManager::LoadExtensions(CPlugin *pPlugin)
 {
-	auto callback = [pPlugin] (const sp_pubvar_t *pubvar, const CPlugin::ExtVar& ext) -> bool
+	auto callback = [pPlugin] (const char *, const CPlugin::ExtVar& ext) -> bool
 	{
 		char path[PLATFORM_MAX_PATH];
 		/* Attempt to auto-load if necessary */
 		if (ext.autoload) {
-			libsys->PathFormat(path, PLATFORM_MAX_PATH, "%s", ext.file);
+			libsys->PathFormat(path, PLATFORM_MAX_PATH, "%s", ext.file.c_str());
 			g_Extensions.LoadAutoExtension(path, ext.required);
 		}
 		return true;
@@ -1287,24 +1389,24 @@ void CPluginManager::LoadExtensions(CPlugin *pPlugin)
 bool CPluginManager::RequireExtensions(CPlugin *pPlugin)
 {
 	auto callback = [pPlugin]
-                    (const sp_pubvar_t *pubvar, const CPlugin::ExtVar& ext) -> bool
+                    (const char *pubvar, const CPlugin::ExtVar& ext) -> bool
 	{
 		/* Is this required? */
 		if (ext.required) {
 			char path[PLATFORM_MAX_PATH];
-			libsys->PathFormat(path, PLATFORM_MAX_PATH, "%s", ext.file);
+			libsys->PathFormat(path, PLATFORM_MAX_PATH, "%s", ext.file.c_str());
 			IExtension *pExt = g_Extensions.FindExtensionByFile(path);
 			if (!pExt)
-				pExt = g_Extensions.FindExtensionByName(ext.name);
+				pExt = g_Extensions.FindExtensionByName(ext.name.c_str());
 
 			if (!pExt || !pExt->IsRunning(nullptr, 0)) {
-				pPlugin->EvictWithError(Plugin_Failed, "Required extension \"%s\" file(\"%s\") not running", ext.name, ext.file);
+				pPlugin->EvictWithError(Plugin_Failed, "Required extension \"%s\" file(\"%s\") not running", ext.name.c_str(), ext.file.c_str());
 				return false;
 			}
 			g_Extensions.BindChildPlugin(pExt, pPlugin);
 		} else {
 			char buffer[64];
-			ke::SafeSprintf(buffer, sizeof(buffer), "__ext_%s_SetNTVOptional", &pubvar->name[6]);
+			ke::SafeSprintf(buffer, sizeof(buffer), "__ext_%s_SetNTVOptional", &pubvar[6]);
 
 			if (IPluginFunction *pFunc = pPlugin->GetBaseContext()->GetFunctionByName(buffer)) {
 				cell_t res;
@@ -1344,7 +1446,7 @@ CPlugin *CPluginManager::CompileAndPrep(const char *path)
 
 bool CPluginManager::MalwareCheckPass(CPlugin *pPlugin)
 {
-	unsigned char *pCodeHash = pPlugin->GetRuntime()->GetCodeHash();
+	unsigned char *pCodeHash = pPlugin->runtime()->GetCodeHash();
 
 	char codeHashBuf[40];
 	ke::SafeStrcpy(codeHashBuf, sizeof(codeHashBuf), "plugin_");
@@ -1384,11 +1486,10 @@ bool CPluginManager::RunSecondPass(CPlugin *pPlugin)
 	g_ShareSys.BindNativesToPlugin(pPlugin, false);
 
 	// Find any unbound natives. Right now, these are not allowed.
-	IPluginContext *pContext = pPlugin->GetBaseContext();
-	uint32_t num = pContext->GetNativesNum();
+	uint32_t num = pPlugin->runtime()->GetNativesNum();
 	for (unsigned int i=0; i<num; i++)
 	{
-		const sp_native_t *native = pContext->GetRuntime()->GetNative(i);
+		const sp_native_t *native = pPlugin->runtime()->GetNative(i);
 		if (!native)
 			break;
 		if (native->status == SP_NATIVE_UNBOUND &&
@@ -1482,11 +1583,10 @@ void CPluginManager::TryRefreshDependencies(CPlugin *pPlugin)
 	/* Find any unbound natives
 	 * Right now, these are not allowed
 	 */
-	IPluginContext *pContext = pPlugin->GetBaseContext();
-	uint32_t num = pContext->GetNativesNum();
+	uint32_t num = pPlugin->runtime()->GetNativesNum();
 	for (unsigned int i=0; i<num; i++)
 	{
-		const sp_native_t *native = pContext->GetRuntime()->GetNative(i);
+		const sp_native_t *native = pPlugin->runtime()->GetNative(i);
 		if (!native)
 			break;
 		if (native->status == SP_NATIVE_UNBOUND &&
@@ -1592,12 +1692,9 @@ void CPluginManager::UnloadPluginImpl(CPlugin *pPlugin)
 	delete pPlugin;
 }
 
-IPlugin *CPluginManager::FindPluginByContext(const sp_context_t *ctx)
+SMPlugin *CPluginManager::FindPluginByContext(IPluginContext *pContext)
 {
-	IPlugin *pPlugin;
-	IPluginContext *pContext;
-
-	pContext = reinterpret_cast<IPluginContext *>(const_cast<sp_context_t *>(ctx));
+	SMPlugin *pPlugin;
 
 	if (pContext->GetKey(2, (void **)&pPlugin))
 	{
@@ -1607,7 +1704,7 @@ IPlugin *CPluginManager::FindPluginByContext(const sp_context_t *ctx)
 	return NULL;
 }
 
-CPlugin *CPluginManager::GetPluginByCtx(const sp_context_t *ctx)
+CPlugin *CPluginManager::GetPluginByCtx(IPluginContext *ctx)
 {
 	return (CPlugin *)FindPluginByContext(ctx);
 }
@@ -2038,7 +2135,7 @@ void CPluginManager::OnRootConsoleCommand(const char *cmdname, const ICommandArg
 					rootmenu->ConsolePrint("  Timestamp: %s", pl->GetDateTime());
 				}
 
-				if (IPluginRuntime *runtime = pl->GetRuntime()) {
+				if (auto runtime = pl->runtime()) {
 				  unsigned char *pCodeHash = runtime->GetCodeHash();
 				  unsigned char *pDataHash = runtime->GetDataHash();
 
@@ -2412,9 +2509,9 @@ public:
 		return g_PluginSys.UnloadPlugin(plugin);
 	}
 
-	IPlugin *FindPluginByContext(const sp_context_t *ctx) override
+	IPlugin *FindPluginByContext(IPluginContext *ctx) override
 	{
-		return g_PluginSys.FindPluginByContext(ctx);
+		return g_PluginSys.FindPluginByContext(ctx->GetBaseRuntime());
 	}
 
 	unsigned int GetPluginCount() override
@@ -2475,3 +2572,4 @@ IPluginManager *CPluginManager::GetOldAPI()
 {
 	return &sOldPluginAPI;
 }
+

@@ -82,9 +82,9 @@ typedef Address = int64;
 public const int64 __Int64_Address__ = 0;
 
 /**< Equivallent to nullptr */
-public const int64 Address_Null = 0;
+public const Address Address_Null = 0;
 /**< Size of a pointer in bytes (same as `sizeof(void*)`) */
-public const int64 Address_PointerSize = 0;
+public const Address Address_PointerSize = 0;
 
 enum APLRes
 {
@@ -199,6 +199,8 @@ forward void OnMapInit(const char[] mapName);
 
 /**
  * Called when the map is loaded.
+ *
+ * @note On late load this will be called again.
  */
 forward void OnMapStart();
 
@@ -212,8 +214,8 @@ forward void OnMapEnd();
  * executed, and all plugin configs are done executing.  This is the best
  * place to initialize plugin functions which are based on cvar data.
  *
- * @note This will always be called once and only once per map.  It will be
- *       called after OnMapStart().
+ * @note This will always be called once and only once per map, after
+ *       OnMapStart(). On late load it will be called again.
  */
 forward void OnConfigsExecuted();
 
@@ -262,7 +264,7 @@ methodmap PluginIterator < Handle
 	// Advances the iterator. Returns whether there are more plugins available in the iterator.
 	//
 	// @return              True on more plugins, false otherwise.
-	// @error               Invalid Handle.
+	// @error               Invalid Handle, or called when the iterator is already exhausted.
 	public native bool Next();
 
 	// Returns the current plugin in the iterator.

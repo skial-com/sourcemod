@@ -31,6 +31,8 @@
 
 #include "smn_keyvalues.h"
 
+#include <wchar.h>
+
 #include "sourcemod.h"
 #include "sourcemm_api.h"
 #include "sm_stringutil.h"
@@ -65,15 +67,51 @@ public:
 
 		delete pStk;
 	}
-	int CalcKVSizeR(KeyValues *pv)
+	unsigned int CalcKVSizeR(KeyValues *pValues)
 	{
-		CUtlBuffer buf;
-		int size;
+		unsigned int size = sizeof(KeyValues);
 
-		pv->RecursiveSaveToFile(buf, 0);
-		size = buf.TellMaxPut();
+		if (const char *pName = pValues->GetName())
+		{
+			size += strlen(pName) + 1;
+		}
 
-		buf.Purge();
+		switch (pValues->GetDataType())
+		{
+			case KeyValues::TYPE_STRING:
+			{
+				if (const char *pValue = pValues->GetString())
+				{
+					size += strlen(pValue) + 1;
+				}
+				break;
+			}
+			case KeyValues::TYPE_WSTRING:
+			{
+				if (const wchar_t *pValue = pValues->GetWString())
+				{
+					size += (wcslen(pValue) + 1) * sizeof(wchar_t);
+				}
+				break;
+			}
+			case KeyValues::TYPE_UINT64:
+			{
+				/* Stored in a separately-allocated 8-byte buffer, not the inline union. */
+				size += sizeof(uint64);
+				break;
+			}
+			default:
+			{
+				break;
+			}
+		}
+
+		/* Recurse into child keys/values. Siblings are handled by the loop, so
+		 * recursion depth stays bounded by the tree depth rather than its width. */
+		for (KeyValues *pSub = pValues->GetFirstSubKey(); pSub != NULL; pSub = pSub->GetNextKey())
+		{
+			size += CalcKVSizeR(pSub);
+		}
 
 		return size;
 	}
@@ -500,6 +538,36 @@ static cell_t smn_CreateKeyValues(IPluginContext *pCtx, const cell_t *params)
 	pStk = new KeyValueStack;
 	pStk->pBase = new KeyValues(name, is_empty ? NULL : firstkey, (is_empty||(firstvalue[0]=='\0')) ? NULL : firstvalue);
 	pStk->pCurRoot.push(pStk->pBase);
+
+	return handlesys->CreateHandle(g_KeyValueType, pStk, pCtx->GetIdentity(), g_pCoreIdent, NULL);
+}
+
+static cell_t smn_KeyValuesFromAddress(IPluginContext *pCtx, const cell_t *params)
+{
+	void *addr = reinterpret_cast<void *>(params[1]);
+	if (pCtx->GetRuntime()->FindPubvarByName("__Int64_Address__", nullptr) == SP_ERROR_NONE)
+	{
+		cell_t *sp_addr;
+		if (int err = pCtx->LocalToPhysAddr(params[1], &sp_addr); err != SP_ERROR_NONE)
+		{
+			return pCtx->ThrowNativeErrorEx(err, "Could not read argument");
+		}
+		addr = reinterpret_cast<void *>(*reinterpret_cast<int64_t *>(sp_addr));
+	}
+
+	if (addr == NULL)
+	{
+		return pCtx->ThrowNativeError("Address cannot be null");
+	}
+
+	/* The handle does not own the underlying KeyValues; it belongs to whoever
+	 * gave us the pointer (typically the game engine), so don't delete it when
+	 * the handle is closed.
+	 */
+	KeyValueStack *pStk = new KeyValueStack;
+	pStk->pBase = reinterpret_cast<KeyValues *>(addr);
+	pStk->pCurRoot.push(pStk->pBase);
+	pStk->m_bDeleteOnDestroy = false;
 
 	return handlesys->CreateHandle(g_KeyValueType, pStk, pCtx->GetIdentity(), g_pCoreIdent, NULL);
 }
@@ -1113,6 +1181,38 @@ static cell_t smn_KvGetSectionSymbol(IPluginContext *pCtx, const cell_t *params)
 	return 1;
 }
 
+static cell_t KeyValues_Merge(IPluginContext *pContext, const cell_t *params)
+{
+#if SOURCE_ENGINE < SE_ORANGEBOX || SOURCE_ENGINE == SE_ALIENSWARM
+    // <OB doesn't have this function, and on ASW, we're still using the stock tier1 lib (with there being no source in the sdk)
+	return pContext->ThrowNativeError("KeyValues.Merge is not supported on this engine version");
+#else
+	Handle_t hndl_this = static_cast<Handle_t>(params[1]);
+	Handle_t hndl_other = static_cast<Handle_t>(params[2]);
+	HandleError herr;
+	HandleSecurity sec;
+	KeyValueStack *pStk_this, *pStk_other;
+
+	sec.pOwner = NULL;
+	sec.pIdentity = g_pCoreIdent;
+
+	if ((herr=handlesys->ReadHandle(hndl_this, g_KeyValueType, &sec, (void **)&pStk_this))
+		!= HandleError_None)
+	{
+		return pContext->ThrowNativeError("Invalid key value handle %x (error %d)", hndl_this, herr);
+	}
+	if ((herr=handlesys->ReadHandle(hndl_other, g_KeyValueType, &sec, (void **)&pStk_other))
+		!= HandleError_None)
+	{
+		return pContext->ThrowNativeError("Invalid key value handle %x (error %d)", hndl_other, herr);
+	}
+
+	pStk_this->pCurRoot.front()->RecursiveMergeKeyValues(pStk_other->pCurRoot.front());
+
+	return 1;
+#endif
+}
+
 static cell_t KeyValues_Import(IPluginContext *pContext, const cell_t *params)
 {
 	// This version takes (dest, src). The original is (src, dest).
@@ -1221,6 +1321,7 @@ REGISTER_NATIVES(keyvaluenatives)
 
 	// Transitional syntax support.
 	{"KeyValues.KeyValues",				smn_CreateKeyValues},
+	{"KeyValues.FromAddress",			smn_KeyValuesFromAddress},
 	{"KeyValues.SetString",				smn_KvSetString},
 	{"KeyValues.SetNum",				smn_KvSetNum},
 	{"KeyValues.SetUInt64",				smn_KvSetUInt64},
@@ -1256,6 +1357,7 @@ REGISTER_NATIVES(keyvaluenatives)
 	{"KeyValues.ExportToFile",			smn_KeyValuesToFile},
 	{"KeyValues.ExportToString",		smn_KeyValuesToString},
 	{"KeyValues.ExportLength.get",		smn_KeyValuesExportLength},
+	{"KeyValues.Merge",					KeyValues_Merge},
 
 	{NULL,						NULL}
 };

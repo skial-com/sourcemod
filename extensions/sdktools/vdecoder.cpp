@@ -304,7 +304,7 @@ DataStatus EncodeValveParam(IPluginContext *pContext,
 			if (pContext->LocalToPhysAddr(param, &sp_addr) != SP_ERROR_NONE) {
 				return Data_Fail;
 			}
-			*reinterpret_cast<int64_t*>(sp_addr) = reinterpret_cast<intptr_t>(*(void**)buffer);
+			*reinterpret_cast<int64_t*>(sp_addr) = reinterpret_cast<uintptr_t>(*(void**)buffer);
 
 			return Data_Okay;
 		}
@@ -617,12 +617,6 @@ DataStatus DecodeValveParam(IPluginContext *pContext,
 		}
 	case Valve_SMAddress:
 	    {
-			if (data->decflags & VDECODE_FLAG_BYREF)
-			{
-				cell_t *addr;
-				pContext->LocalToPhysAddr(param, &addr);
-				param = *addr;
-			}
 			if (data->flags & PASSFLAG_ASPOINTER)
 			{
 				*(void **)buffer = (unsigned char *)_buffer + pCall->stackEnd + data->obj_offset;
@@ -634,7 +628,6 @@ DataStatus DecodeValveParam(IPluginContext *pContext,
 				return Data_Fail;
 			}
 			void* addr = (void*)(*reinterpret_cast<int64_t*>(sp_addr));
-
 
 			if (addr == nullptr && (data->decflags & VDECODE_FLAG_ALLOWNULL) == 0)
 			{

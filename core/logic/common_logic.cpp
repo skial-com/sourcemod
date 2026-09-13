@@ -57,6 +57,7 @@
 #include "RootConsoleMenu.h"
 #include "CellArray.h"
 #include "smn_entitylump.h"
+#include "sourcepawn/vm/environment.h"
 #include <bridge/include/BridgeAPI.h>
 #include <bridge/include/IProviderCallbacks.h>
 
@@ -80,8 +81,7 @@ IPluginManager *pluginsys = g_PluginSys.GetOldAPI();
 IForwardManager *forwardsys = &g_Forwards;
 ServerGlobals serverGlobals;
 IAdminSystem *adminsys = &g_Admins;
-ISourcePawnEngine *g_pSourcePawn;
-ISourcePawnEngine2 *g_pSourcePawn2;
+sp::Environment *g_pPawnEnv;
 IScriptManager *scripts = &g_PluginSys;
 IExtensionSys *extsys = &g_Extensions;
 ILogger *logger = &g_Logger;
@@ -160,6 +160,51 @@ public:
 	}
 } sProviderCallbackListener;
 
+static void logic_shutdown()
+{
+	if (g_pPawnEnv)
+	{
+		g_pPawnEnv->Shutdown();
+		delete g_pPawnEnv;
+		g_pPawnEnv = nullptr;
+	}
+}
+
+static void logic_SetJitEnabled(bool enabled)
+{
+	g_pPawnEnv->SetJitEnabled(enabled);
+}
+
+static void logic_SetDebugMetadataFlags(int flags)
+{
+	g_pPawnEnv->SetDebugMetadataFlags(flags);
+}
+
+class PawnEnvConfig : public SMGlobalClass
+{
+public:
+	void OnSourceModStartup(bool late) override
+	{
+		const char *timeout = bridge->GetCoreConfigValue("SlowScriptTimeout");
+		if (timeout == NULL)
+		{
+			timeout = "8";
+		}
+
+		int seconds = atoi(timeout);
+		if (seconds != 0)
+		{
+			g_pPawnEnv->InstallWatchdogTimer(seconds * 1000);
+		}
+
+		const char *linedebugger = bridge->GetCoreConfigValue("EnableLineDebugging");
+		if (linedebugger != NULL && strcasecmp(linedebugger, "yes") == 0)
+		{
+			g_pPawnEnv->EnableDebugBreak();
+		}
+	}
+} s_PawnEnvConfig;
+
 static sm_logic_t logic =
 {
 	NULL,
@@ -182,6 +227,9 @@ static sm_logic_t logic =
 	SetEntityLumpWritable,
 	ParseEntityLumpString,
 	GetEntityLumpString,
+	logic_shutdown,
+	logic_SetJitEnabled,
+	logic_SetDebugMetadataFlags,
 	&g_PluginSys,
 	&g_ShareSys,
 	&g_Extensions,
@@ -209,8 +257,16 @@ static void logic_init(CoreProvider* core, sm_logic_t* _logic)
 	playerhelpers = core->playerhelpers;
 	gamehelpers = core->gamehelpers;
 	menus = core->menus;
-	g_pSourcePawn = *core->spe1;
-	g_pSourcePawn2 = *core->spe2;
+
+	g_pPawnEnv = sp::Environment::New();
+	ISourcePawnEngine *spe1 = g_pPawnEnv->APIv1();
+
+	*core->spe1 = spe1;
+	*core->spe2 = g_pPawnEnv->APIv2();
+	*core->spe_env = g_pPawnEnv;
+
+	g_pPawnEnv->SetDebugListener(&g_DbgReporter);
+
 	SMGlobalClass::head = core->listeners;
 
 	g_ShareSys.Initialize();

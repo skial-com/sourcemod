@@ -93,34 +93,64 @@ const char *PgDriver::GetProductName()
 
 PGconn *Connect(const DatabaseInfo *info, char *error, size_t maxlength)
 {
-	/* https://www.postgresql.org/docs/9.6/libpq-connect.html#LIBPQ-CONNSTRING */
-	/* TODO: Switch to PQconnectdbParams to prevent escaping issues. */
-	char *options = new char[1024];
-	int offs = snprintf(options, 1024, "host='%s' dbname='%s'", info->host, info->database);
+	const char *keywords[8];
+	const char *values[8];
+	unsigned int count = 0;
+
+	char port[16];
+	char timeout[16];
+	char options[1024];
+	const char *searchPath = info->dbiVersion >= 10 ? info->schemaName : NULL;
+
+	keywords[count] = "host";
+	values[count++] = info->host;
+
+	keywords[count] = "dbname";
+	values[count++] = info->database;
 
 	if (info->port > 0)
 	{
-		offs += snprintf(&options[offs], 1024 - offs, " port=%d", info->port);
+		snprintf(port, sizeof(port), "%u", info->port);
+		keywords[count] = "port";
+		values[count++] = port;
 	}
 
 	if (info->user[0] != '\0')
 	{
-		offs += snprintf(&options[offs], 1024 - offs, " user='%s'", info->user);
+		keywords[count] = "user";
+		values[count++] = info->user;
 	}
 	if (info->pass[0] != '\0')
 	{
-		offs += snprintf(&options[offs], 1024 - offs, " password='%s'", info->pass);
+		keywords[count] = "password";
+		values[count++] = info->pass;
 	}
 
 	if (info->maxTimeout > 0)
 	{
-		offs += snprintf(&options[offs], 1024 - offs, " connect_timeout=%d", info->maxTimeout);
+		snprintf(timeout, sizeof(timeout), "%u", info->maxTimeout);
+		keywords[count] = "connect_timeout";
+		values[count++] = timeout;
 	}
 
-	/* Make a connection to the database */
-	PGconn *conn = PQconnectdb(options);
+	if (searchPath && searchPath[0] != '\0')
+	{
+		// libpq splits options on spaces; schema names containing spaces need escaping.
+		snprintf(options, sizeof(options), "-c search_path=%s", searchPath);
+		keywords[count] = "options";
+		values[count++] = options;
+	}
 
-	delete [] options;
+	keywords[count] = NULL;
+	values[count] = NULL;
+
+	/* Make a connection to the database */
+	PGconn *conn = PQconnectdbParams(keywords, values, 0);
+	if (!conn)
+	{
+		snprintf(error, maxlength, "Failed to allocate memory for connection");
+		return NULL;
+	}
 
 	/* Check to see that the backend connection was successfully made */
 	if (PQstatus(conn) != CONNECTION_OK)
@@ -172,6 +202,7 @@ IDatabase *PgDriver::Connect(const DatabaseInfo *info, bool persistent, char *er
 				&& CompareField(info->user, other.user)
 				&& CompareField(info->pass, other.pass)
 				&& CompareField(info->database, other.database)
+				&& CompareField(info->dbiVersion >= 10 ? info->schemaName : NULL, other.schemaName)
 				&& (info->port == other.port))
 			{
 				db->IncReferenceCount();

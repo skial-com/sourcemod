@@ -41,6 +41,7 @@
 #include <const.h>
 #include <ITranslator.h>
 #include "logic_bridge.h"
+#include "AutoHandleRooter.h"
 
 float g_next_vote = 0.0f;
 
@@ -171,6 +172,12 @@ void VoteMenuHandler::OnClientDisconnected(int client)
 			assert((unsigned)item < m_Items);
 			assert(m_Votes[item] > 0);
 			m_Votes[item]--;
+
+			if (sm_vote_hintbox.GetBool())
+			{
+				BuildVoteLeaders();
+				DrawHintProgress();
+			}
 		}
 		m_ClientVotes[client] = VOTE_NOT_VOTING;
 	}
@@ -273,6 +280,12 @@ bool VoteMenuHandler::RedrawToClient(int client, bool revotes)
 		m_ClientVotes[client] = VOTE_PENDING;
 		m_Revoting[client] = true;
 		m_NumVotes--;
+
+		if (sm_vote_hintbox.GetBool())
+		{
+			BuildVoteLeaders();
+			DrawHintProgress();
+		}
 	}
 
 	if (m_nMenuTime == MENU_TIME_FOREVER)
@@ -351,7 +364,14 @@ void VoteMenuHandler::StartVoting()
 
 	m_bStarted = true;
 
-	m_pHandler->OnMenuVoteStart(m_pCurMenu);
+	IBaseMenu *menu = m_pCurMenu;
+	AutoHandleRooter ahr(menu->GetHandle());
+	m_pHandler->OnMenuVoteStart(menu);
+
+	if (!m_bStarted)
+	{
+		return;
+	}
 
 	m_displayTimer = g_Timers.CreateTimer(this, 1.0, NULL, TIMER_FLAG_REPEAT|TIMER_FLAG_NO_MAPCHANGE);
 
@@ -414,6 +434,7 @@ void VoteMenuHandler::EndVoting()
 		IBaseMenu *menu = m_pCurMenu;
 		IMenuHandler *handler = m_pHandler;
 		InternalReset();
+		AutoHandleRooter ahr(menu ? menu->GetHandle() : BAD_HANDLE);
 		handler->OnMenuVoteCancel(menu, VoteCancel_Generic);
 		handler->OnMenuEnd(menu, MenuEnd_VotingCancelled);
 		return;
@@ -443,6 +464,7 @@ void VoteMenuHandler::EndVoting()
 		IBaseMenu *menu = m_pCurMenu;
 		IMenuHandler *handler = m_pHandler;
 		InternalReset();
+		AutoHandleRooter ahr(menu ? menu->GetHandle() : BAD_HANDLE);
 		handler->OnMenuVoteCancel(menu, VoteCancel_NoVotes);
 		handler->OnMenuEnd(menu, MenuEnd_VotingCancelled);
 		return;
@@ -474,6 +496,7 @@ void VoteMenuHandler::EndVoting()
 	InternalReset();
 
 	/* Send vote info */
+	AutoHandleRooter ahr(menu ? menu->GetHandle() : BAD_HANDLE);
 	handler->OnMenuVoteResults(menu, &vote);
 	handler->OnMenuEnd(menu, MenuEnd_VotingDone);
 }
@@ -650,6 +673,7 @@ void VoteMenuHandler::BuildVoteLeaders()
 {
 	if (m_NumVotes == 0 || !sm_vote_hintbox.GetBool())
 	{
+		m_leaderList[0] = '\0';
 		return;
 	}
 

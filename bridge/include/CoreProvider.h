@@ -32,11 +32,6 @@
 #include <IAdminSystem.h>
 #include <amtl/am-function.h>
 
-namespace SourcePawn {
-class ISourcePawnEngine;
-class ISourcePawnEngine2;
-} // namespace SourcePawn
-
 // SDK types.
 #if defined(SM_LOGIC)
 class ConCommandBase {};
@@ -83,6 +78,7 @@ public:
 	IMenuManager	*menus;
 	SourcePawn::ISourcePawnEngine **spe1;
 	SourcePawn::ISourcePawnEngine2 **spe2;
+	SourcePawn::ISourcePawnEnvironment **spe_env;
 	const char		*gamesuffix;
 	/* Data */
 	ServerGlobals   *serverGlobals;

@@ -1,4 +1,4 @@
-name: Build master branch
+name: Build Release
 on:
   push:
     branches:
@@ -9,7 +9,8 @@ env:
   DUMP_SYMS_VERSION: '2.3.7'
   # Used for caching
   # TODO: Handle this better so that we don't have to update this in lockstep with checkout-deps
-  MYSQL_VERSION: '5.7'
+  MARIADB_CONNECTOR_C_VERSION: '3.4.9'
+  MARIADB_CONNECTOR_C_RELEASE: '3.4.9-sm.5'
   MMSOURCE_VERSION: '1.12'
 jobs:
   build:
@@ -24,7 +25,7 @@ jobs:
           - platform: linux
             os: ubuntu-latest
             os_short: linux
-            container_image: ghcr.io/alliedmodders/build-containers/debian11:latest
+            container_image: ghcr.io/alliedmodders/build-containers/debian11-clang22:latest
       fail-fast: false
     name: ${{ matrix.platform }}
     runs-on: ${{ matrix.os }}
@@ -32,7 +33,7 @@ jobs:
       image: ${{ matrix.container_image }}
     steps:
       - name: Checkout SourceMod
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           path: sourcemod
           fetch-depth: 0
@@ -94,18 +95,20 @@ jobs:
             echo "sdk_list=$(printf '%s\n' "${sdk_list[@]}" | jq --raw-input . | jq --slurp --compact-output .)" >> $GITHUB_OUTPUT
       
       - name: Cache dependencies
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         env:
-          cache-name: hl2sdk-mysql-mmsource
+          cache-name: hl2sdk-mariadb-connector-c-mmsource
         with:
           path: ${{ steps.path_helper.outputs.dependencies }}
-          key: ${{ runner.os }}-build-${{ env.cache-name }}-mysql${{ env.MYSQL_VERSION }}-mmsource${{ env.MMSOURCE_VERSION }}-${{ join(fromJson(steps.sdk_list.outputs.sdk_list), '') }}
+          key: ${{ runner.os }}-build-${{ env.cache-name }}-mariadb${{ env.MARIADB_CONNECTOR_C_RELEASE }}-mmsource${{ env.MMSOURCE_VERSION }}-${{ join(fromJson(steps.sdk_list.outputs.sdk_list), '') }}
           restore-keys: |
-            ${{ runner.os }}-build-${{ env.cache-name }}-mysql${{ env.MYSQL_VERSION }}-mmsource${{ env.MMSOURCE_VERSION }}-
-            ${{ runner.os }}-build-${{ env.cache-name }}-mysql${{ env.MYSQL_VERSION }}-
+            ${{ runner.os }}-build-${{ env.cache-name }}-mariadb${{ env.MARIADB_CONNECTOR_C_RELEASE }}-mmsource${{ env.MMSOURCE_VERSION }}-
+            ${{ runner.os }}-build-${{ env.cache-name }}-mariadb${{ env.MARIADB_CONNECTOR_C_RELEASE }}-
       
       - name: Install dependencies
         shell: bash
+        env:
+          MAXMIND_LICENSE_KEY: ${{ secrets.MAXMIND_LICENSE_KEY }}
         run: |
           mkdir -p '${{ steps.path_helper.outputs.dependencies }}'
           cd '${{ steps.path_helper.outputs.dependencies }}'
@@ -114,12 +117,22 @@ jobs:
           mkdir -p sourcemod
           ../sourcemod/tools/checkout-deps.sh -s ${{ join(fromJson(steps.sdk_list.outputs.sdk_list), ',') }}
 
-          if [ ! -f GeoLite2-City_20191217/GeoLite2-City.mmdb ]; then
-            geotar="GeoLite2-City_20191217.tar.gz"
-            curl -sSL "https://sm.alliedmods.net/$geotar" -o $geotar
-            tar -xzf "$geotar"
-            rm "$geotar"
+          if [ -z "$MAXMIND_LICENSE_KEY" ]; then
+            echo "::error::MAXMIND_LICENSE_KEY secret is not configured."
+            exit 1
           fi
+
+          geotmpdir=$(mktemp -d)
+          geotar="$geotmpdir/GeoLite2-City.tar.gz"
+          curl -fsSL "https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-City&license_key=$MAXMIND_LICENSE_KEY&suffix=tar.gz" -o "$geotar"
+          tar -xzf "$geotar" -C "$geotmpdir"
+          geommdb=$(find "$geotmpdir" -type f -name 'GeoLite2-City.mmdb' | head -n 1)
+          if [ -z "$geommdb" ]; then
+            echo "::error::GeoLite2-City.mmdb not found in downloaded MaxMind archive."
+            exit 1
+          fi
+          cp "$geommdb" '${{ steps.path_helper.outputs.dependencies }}/GeoLite2-City.mmdb'
+          rm -rf "$geotmpdir"
 
       - name: Build
         working-directory: sourcemod
@@ -133,18 +146,17 @@ jobs:
           python3 ../configure.py \
             --enable-optimize \
             --breakpad-dump \
-            --no-color \
             --symbol-files \
             --sdks=${{ join(fromJson(steps.sdk_list.outputs.sdk_list), ',') }} \
             --targets=${{ env.ARCH }} \
             '--mms-path=${{ steps.path_helper.outputs.dependencies }}/mmsource-${{ env.MMSOURCE_VERSION }}' \
             '--hl2sdk-root=${{ steps.path_helper.outputs.dependencies }}' \
-            '--mysql-path=${{ steps.path_helper.outputs.dependencies }}/mysql-${{ env.MYSQL_VERSION }}' \
-            '--mysql64-path=${{ steps.path_helper.outputs.dependencies }}/mysql-${{ env.MYSQL_VERSION }}-x86_64'
+            '--mariadb-path=${{ steps.path_helper.outputs.dependencies }}/mariadb-connector-c-${{ env.MARIADB_CONNECTOR_C_VERSION }}-x86' \
+            '--mariadb64-path=${{ steps.path_helper.outputs.dependencies }}/mariadb-connector-c-${{ env.MARIADB_CONNECTOR_C_VERSION }}-x86_64'
           ambuild
 
-          mkdir -p addons/sourcemod/configs/geoip
-          cp '${{ steps.path_helper.outputs.dependencies }}/GeoLite2-City_20191217/GeoLite2-City.mmdb' addons/sourcemod/configs/geoip/GeoLite2-City.mmdb
+          mkdir -p package/addons/sourcemod/configs/geoip
+          cp '${{ steps.path_helper.outputs.dependencies }}/GeoLite2-City.mmdb' package/addons/sourcemod/configs/geoip/GeoLite2-City.mmdb
       
       - name: Package
         id: package
@@ -215,11 +227,15 @@ jobs:
               $fullPdbPathInfo = (Get-Item -Path (Join-Path -Path $buildDir -ChildPath $_))
               $baseName = $fullPdbPathInfo.BaseName
               $dir = $fullPdbPathInfo.DirectoryName
-              
+
+              $relDir = [System.IO.Path]::GetRelativePath($buildDir, $dir)
+              $destDir = Join-Path $outDir $relDir
+              New-Item -ItemType Directory -Force -Path $destDir | Out-Null
+
               '.pdb', '.exe', '.dll' | ForEach-Object -Process {
                   $binPath = Join-Path $dir ($baseName + $_)
                   if (Test-Path $binPath) {
-                    Copy-Item -Path $binPath -Destination $outDir
+                    Copy-Item -Path $binPath -Destination $destDir
                   }
               }
           }
@@ -227,7 +243,7 @@ jobs:
       - name: Upload PDBs
         if: startsWith(matrix.os, 'windows')
         id: upload_pdbs
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pdbs
           path: pdbs/*

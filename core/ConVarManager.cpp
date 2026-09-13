@@ -356,7 +356,7 @@ Handle_t ConVarManager::CreateConVar(IPluginContext *pContext, const char *name,
 	ConVarInfo *pInfo = NULL;
 	Handle_t hndl = 0;
 
-	IPlugin *plugin = scripts->FindPluginByContext(pContext->GetContext());
+	IPlugin *plugin = scripts->FindPluginByContext(pContext);
 
 	/* Find out if the convar exists already */
 	pConVar = icvar->FindVar(name);
@@ -654,7 +654,7 @@ void ConVarManager::OnConVarChanged(ConVar *pConVar, const char *oldValue, float
 		 * ChangeStringValue calls that may delete[] + reallocate m_pszString
 		 * while the forward is still iterating plugin callbacks. */
 		char newValue[512];
-		strncpy(newValue, pConVar->GetString(), sizeof(newValue));
+		ke::SafeStrcpy(newValue, sizeof(newValue), pConVar->GetString());
 
 		/* Now call forwards in plugins that have hooked this */
 		pForward->PushCell(pInfo->handle);

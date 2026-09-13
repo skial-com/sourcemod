@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - master
+      - '[0-9]+.[0-9]+-dev'
     tags:
       - '*'
   pull_request:
@@ -27,13 +28,13 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           submodules: recursive
 
       - name: Log in to the Container registry
         if: github.event_name != 'pull_request'
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}

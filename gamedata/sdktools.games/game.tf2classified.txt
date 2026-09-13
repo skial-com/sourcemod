@@ -12,28 +12,28 @@
 			}
 			"GiveNamedItem"
 			{
-				"windows64"	"453"
-				"linux64"	"454"
+				"windows64"	"463"
+				"linux64"	"464"
 			}
 			"RemovePlayerItem"
 			{
-				"windows64"	"311"
-				"linux64"	"312"
+				"windows64"	"318"
+				"linux64"	"319"
 			}
 			"Weapon_GetSlot"
 			{
-				"windows64"	"309"
-				"linux64"	"310"
+				"windows64"	"316"
+				"linux64"	"317"
 			}
 			"Ignite"
 			{
-				"windows64"	"242"
-				"linux64"	"243"
+				"windows64"	"249"
+				"linux64"	"250"
 			}
 			"Extinguish"
 			{
-				"windows64"	"246"
-				"linux64"	"247"
+				"windows64"	"253"
+				"linux64"	"254"
 			}
 			"Teleport"
 			{
@@ -42,18 +42,18 @@
 			}
 			"CommitSuicide"
 			{
-				"windows64"	"498"
-				"linux64"	"498"
+				"windows64"	"508"
+				"linux64"	"508"
 			}
 			"GetVelocity"
 			{
-				"windows64"	"161"
-				"linux64"	"162"
+				"windows64"	"166"
+				"linux64"	"167"
 			}
 			"EyeAngles"
 			{
-				"windows64"	"152"
-				"linux64"	"153"
+				"windows64"	"157"
+				"linux64"	"158"
 			}
 			// SetModel
 			"SetEntityModel"
@@ -69,8 +69,8 @@
 			// CTFPlayer::Weapon_Equip
 			"WeaponEquip"
 			{
-				"windows64"	"300"
-				"linux64"	"301"
+				"windows64"	"307"
+				"linux64"	"308"
 			}
 			"Activate"
 			{
@@ -80,18 +80,18 @@
 			// CTFPlayer::PlayerRunCommand
 			"PlayerRunCmd"
 			{
-				"windows64"	"473"
-				"linux64"	"474"
+				"windows64"	"483"
+				"linux64"	"484"
 			}
 			"GiveAmmo"
 			{
-				"windows64"	"290"
-				"linux64"	"291"
+				"windows64"	"297"
+				"linux64"	"298"
 			}
 			"GetAttachment"
 			{
-				"windows64"	"238"
-				"linux64"	"239"
+				"windows64"	"244"
+				"linux64"	"245"
 			}
 		}
 		

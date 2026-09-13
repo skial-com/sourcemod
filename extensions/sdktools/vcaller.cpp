@@ -546,9 +546,9 @@ static cell_t SDKCall(IPluginContext *pContext, const cell_t *params)
 			}
 			return *addr ? 1 : 0;
         } else if (vc->retinfo->vtype == Valve_SMAddress) {
-			if (numparams < 3)
+			if (numparams < 2)
 			{
-				return pContext->ThrowNativeError("Expected argument (3) for VirtualAddress storage");
+				return pContext->ThrowNativeError("Expected argument (2) for Address storage");
 			}
 			void *addr = *(void **)vc->retbuf;
             if (vc->retinfo->flags & PASSFLAG_ASPOINTER)
@@ -559,7 +559,7 @@ static cell_t SDKCall(IPluginContext *pContext, const cell_t *params)
 			if (int err = pContext->LocalToPhysAddr(params[retparam], &sp_addr); err != SP_ERROR_NONE) {
 				return pContext->ThrowNativeErrorEx(err, "Could not read argument");
 			}
-			*reinterpret_cast<int64_t*>(sp_addr) = reinterpret_cast<intptr_t>(addr);
+			*reinterpret_cast<int64_t*>(sp_addr) = reinterpret_cast<uintptr_t>(addr);
 			return 0;
 		} else {
 			cell_t *addr = (cell_t *)vc->retbuf;
