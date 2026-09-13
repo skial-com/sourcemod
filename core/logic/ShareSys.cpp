@@ -40,6 +40,7 @@
 #include "PluginSys.h"
 #include "HandleSys.h"
 #include <sourcepawn/vm/base-runtime.h>
+#include "compat_v8/v8_compat.h"
 
 using namespace ke;
 
@@ -200,7 +201,18 @@ bool ShareSystem::RequestInterface(const char *iface_name,
 
 	if (pIface)
 	{
-		*pIface = iface;
+		SMInterface *handed = iface;
+
+		/* An ABI-8 extension must never see a core object whose vtable has
+		 * changed since; hand it an adapter instead. */
+		if (myself && static_cast<CExtension *>(myself)->GetApiVersion() == 8)
+		{
+			handed = V8Compat::SubstituteInterface(iface_name, iface);
+			if (!handed)
+				return false;
+		}
+
+		*pIface = handed;
 	}
 
 	return true;
@@ -367,9 +379,21 @@ void ShareSystem::BindNativeToPlugin(CPlugin *pPlugin, const sp_native_t *native
 
 	auto rt = pPlugin->runtime();
 	if (pEntry->fake)
+	{
 		rt->UpdateNativeBindingObject(index, pEntry->fake->wrapper, flags, nullptr);
+	}
+	else if (pEntry->owner && pEntry->owner->GetNativeAbi() == 8)
+	{
+		/* Natives from an ABI-8 extension must be handed an old-layout
+		 * IPluginContext, so they go through a callback wrapper. */
+		if (!pEntry->v8wrapper)
+			pEntry->v8wrapper = V8Compat::MakeNativeCallback(pEntry->native->func);
+		rt->UpdateNativeBindingObject(index, pEntry->v8wrapper, flags, nullptr);
+	}
 	else
+	{
 		rt->UpdateNativeBinding(index, pEntry->native->func, flags, nullptr);
+	}
 }
 
 AlreadyRefed<Native> ShareSystem::AddNativeToCache(CNativeOwner *pOwner, const sp_nativeinfo_t *ntv)

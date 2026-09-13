@@ -82,6 +82,9 @@ public:
 	void MarkAllLoaded();
 	void AddLibrary(const char *library);
 	bool IsRequired();
+	unsigned int GetApiVersion() const {
+		return m_ApiVersion;
+	}
 public:
 	virtual bool Load(char *error, size_t maxlength);
 	virtual bool IsLoaded() =0;
@@ -105,6 +108,7 @@ protected:
 	List<SMInterface *> m_Interfaces;
 	List<String> m_Libraries;
 	unsigned int unload_code;
+	unsigned int m_ApiVersion = 0;
 	bool m_bFullyLoaded;
 	bool m_bRequired;
 };

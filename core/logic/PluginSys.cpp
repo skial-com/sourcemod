@@ -48,6 +48,7 @@
 #include <amtl/am-string.h>
 #include <bridge/include/IVEngineServerBridge.h>
 #include <bridge/include/CoreProvider.h>
+#include "compat_v8/v8_compat.h"
 
 #define SOURCEMOD_PLUGINAPI_VERSION     7
 
@@ -150,6 +151,12 @@ void CPlugin::FinishEviction()
 	// so consumers won't attempt to read the context or runtime. The real state
 	// is reflected here.
 	m_state = PluginState::Evicted;
+
+	// The per-runtime compatibility adapters point at the runtime, so they must
+	// go first; they are recreated lazily if the plugin loads again.
+	if (m_v8)
+		m_v8->rt.reset();
+
 	m_pRuntime = nullptr;
 	m_pPhrases = nullptr;
 	m_pContext = nullptr;

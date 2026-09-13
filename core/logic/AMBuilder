@@ -40,6 +40,11 @@ for cxx in builder.targets:
     binary.compiler.cxxflags += ['/GR-']
 
   binary.sources += [
+    'compat_v8/v8_context.cpp',
+    'compat_v8/v8_engine.cpp',
+    'compat_v8/v8_forwards.cpp',
+    'compat_v8/v8_plugins.cpp',
+    'compat_v8/v8_sharesys.cpp',
     'common_logic.cpp',
     'smn_adt_array.cpp',
     'smn_sorting.cpp',

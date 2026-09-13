@@ -75,6 +75,10 @@ struct Native : public ke::Refcounted<Native>
 	const sp_nativeinfo_t *native;
 	std::unique_ptr<FakeNative> fake;
 
+	/* Lazily created wrapper for natives from an ABI-8 extension, which must be
+	 * invoked with an old-layout IPluginContext. */
+	ke::RefPtr<INativeCallback> v8wrapper;
+
 	const char *name() const
 	{
 		if (native)

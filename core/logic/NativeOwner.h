@@ -69,6 +69,15 @@ public:
 	void SetMarkSerial(unsigned int serial);
 	unsigned int GetMarkSerial();
 public:
+	/* The extension ABI version this owner's natives were compiled against.
+	 * 8 means the natives expect the old SourcePawn IPluginContext layout. */
+	void SetNativeAbi(unsigned int abi) {
+		m_nativeAbi = abi;
+	}
+	unsigned int GetNativeAbi() const {
+		return m_nativeAbi;
+	}
+public:
 	void AddDependent(CPlugin *pPlugin);
 	void AddWeakRef(const WeakNative & ref);
 	void DropRefsTo(CPlugin *pPlugin);
@@ -79,6 +88,7 @@ protected:
 	List<CPlugin *> m_Dependents;
 	unsigned int m_nMarkSerial;
 	List<WeakNative> m_WeakRefs;
+	unsigned int m_nativeAbi = 0;
 	std::vector<const sp_nativeinfo_t *> m_natives;
 	std::vector<ke::RefPtr<Native> > m_fakes;
 };

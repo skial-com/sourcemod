@@ -95,6 +95,8 @@ enum class PluginState
 	WaitingToUnloadAndReload,
 };
 
+struct V8PluginCompat;
+
 class CPlugin : 
 	public SMPlugin,
 	public CNativeOwner
@@ -123,6 +125,10 @@ public:
 	CNativeOwner *ToNativeOwner() {
 		return this;
 	}
+
+	/* Lazily created state for ABI-8 extension compatibility. Defined in
+	 * core/logic/compat_v8. */
+	V8PluginCompat *v8compat();
 
 	struct ExtVar {
 		std::string name;
@@ -280,6 +286,7 @@ private:
 	int m_FileVersion;
 
 	// Information that survives past eviction.
+	std::unique_ptr<V8PluginCompat> m_v8;
 	List<String> m_RequiredLibs;
 	IdentityToken_t *m_ident;
 	time_t m_LastFileModTime;

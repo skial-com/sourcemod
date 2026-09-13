@@ -29,6 +29,7 @@
 #include <stdarg.h>
 #include <string.h>
 #include "ForwardSys.h"
+#include "compat_v8/v8_compat.h"
 #include "DebugReporter.h"
 #include "common_logic.h"
 #include <bridge/include/IScriptManager.h>
@@ -149,6 +150,7 @@ void CForwardManager::ReleaseForward(IForward *aForward)
 
 	m_managed.remove(fwd);
 	m_unmanaged.remove(fwd);
+	V8Compat::OnForwardReleased(fwd);
 	delete fwd;
 }
 

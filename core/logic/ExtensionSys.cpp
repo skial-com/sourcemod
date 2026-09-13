@@ -47,6 +47,7 @@
 #include <am-string.h>
 #include <bridge/include/CoreProvider.h>
 #include <bridge/include/ILogger.h>
+#include "compat_v8/v8_compat.h"
 
 CExtensionManager g_Extensions;
 IdentityType_t g_ExtType;
@@ -440,13 +441,24 @@ bool CExtension::PerformAPICheck(char *error, size_t maxlength)
 		return false;
 	}
 
+	m_ApiVersion = (unsigned int)m_pAPI->GetExtensionVersion();
+
+	/* Reset on every check so a reload onto a newer binary clears it. */
+	SetNativeAbi(m_ApiVersion == 8 ? 8 : 0);
+
 	if (m_pAPI->GetExtensionVersion() == 10) {
 		ke::SafeSprintf(error, maxlength, "Extension version %d is not supported", m_pAPI->GetExtensionVersion());
 		return false;
 	}
 
+	/* Binaries built against the fork's ABI 8 are loaded through the
+	 * compatibility layer in core/logic/compat_v8. */
+	if (m_pAPI->GetExtensionVersion() == 8) {
+		return true;
+	}
+
 	if (m_pAPI->GetExtensionVersion() < SMINTERFACE_EXTENSIONAPI_VERSION_MIN) {
-		ke::SafeSprintf(error, maxlength, "Extension version is too old to load (%d, max is %d)", m_pAPI->GetExtensionVersion(), SMINTERFACE_EXTENSIONAPI_VERSION_MIN);
+		ke::SafeSprintf(error, maxlength, "Extension version is too old to load (%d, min is %d)", m_pAPI->GetExtensionVersion(), SMINTERFACE_EXTENSIONAPI_VERSION_MIN);
 		return false;
 	}
 	
@@ -462,7 +474,8 @@ bool CExtension::PerformAPICheck(char *error, size_t maxlength)
 bool CExtension::Load(char *error, size_t maxlength)
 {
 	CreateIdentity();
-	if (!m_pAPI->OnExtensionLoad(this, &g_ShareSys, error, maxlength, !bridge->IsMapLoading()))
+	IShareSys *sharesys = (m_ApiVersion == 8) ? V8Compat::ShareSys() : &g_ShareSys;
+	if (!m_pAPI->OnExtensionLoad(this, sharesys, error, maxlength, !bridge->IsMapLoading()))
 	{
 		g_ShareSys.RemoveInterfaces(this);
 		DestroyIdentity();
@@ -1104,7 +1117,14 @@ void CExtensionManager::OnRootConsoleCommand(const char *cmdname, const ICommand
 						const char *name = pAPI->GetExtensionName();
 						const char *version = pAPI->GetExtensionVerString();
 						const char *descr = pAPI->GetExtensionDescription();
-						rootmenu->ConsolePrint("[%02d] %s (%s): %s", num, name, version, descr);
+						if (pExt->GetApiVersion() == 8)
+						{
+							rootmenu->ConsolePrint("[%02d] %s (%s): %s [legacy ABI v8]", num, name, version, descr);
+						}
+						else
+						{
+							rootmenu->ConsolePrint("[%02d] %s (%s): %s", num, name, version, descr);
+						}
 					}
 				}
 				else if(pExt->IsRequired() || libsys->PathExists(pExt->GetPath()))
@@ -1217,6 +1237,11 @@ void CExtensionManager::OnRootConsoleCommand(const char *cmdname, const ICommand
 					rootmenu->ConsolePrint(" Name: %s (%s)", pAPI->GetExtensionName(), pAPI->GetExtensionDescription());
 					rootmenu->ConsolePrint(" Author: %s (%s)", pAPI->GetExtensionAuthor(), pAPI->GetExtensionURL());
 					rootmenu->ConsolePrint(" Binary info: API version %d (compiled %s)", pAPI->GetExtensionVersion(), pAPI->GetExtensionDateString());
+
+					if (pExt->GetApiVersion() == 8)
+					{
+						rootmenu->ConsolePrint(" Compatibility: legacy ABI v8 (running through the v8 compatibility layer)");
+					}
 
 					if (pExt->IsExternal())
 					{
