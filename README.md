@@ -1,5 +1,28 @@
-SourceMod
+SourceMod Skial Version
 =========
+
+Why the fork
+-------
+For many years the sourcemod maintainers have maintained an ok level of backwards compatibility. From my experience and several others, the maintainers are very resistant to adding code from outsiders unless it is a dead simple bug fix but it usually wasn't an issue as you can make your own extension. 
+
+However over the past months, I've found they want to remove features that have been around for over 10 years like extension reloading after having several pull requests fixing this being ignored or skimmed over with 0 thought. The argument seems to be that they don't use it themselves.
+
+As somebody that uses this feature at least once a month for a large number of players to fix extensions or patch exploits without rebooting, removing this was the tipping point.
+
+I will try to maintain compatibility so we can pull fixes and improvements with a simple merge, but it is not going to be possible to do this forever. 
+
+But I don't think this will be a big problem. Sourcemod is a mature project that doesn't really need much more added to it, and the last few breaking changes from Valve, I was able to fix faster myself.
+
+First class support will be provided for TF2 on Linux as that is what we use.
+
+Improvements over the original so far
+-------
+- The latest version of sourcemod blocks old extensions from loading. This fork allows old extensions to load. 
+- You can now do sm exts reload with name or number. Plugins that depend on the extension will automatically reload.
+  https://github.com/alliedmodders/sourcemod/pull/2418
+- OnLibraryAdded now fires for extension based libraries.
+  https://github.com/alliedmodders/sourcemod/pull/2417
+- Mysql now sets the connection charset to utf8mb4. This is needed because when the driver autoreconnects, it will revert the charset back to the default.
 
 General
 -------
