@@ -244,6 +244,8 @@ void RootConsoleMenu::OnRootConsoleCommand(const char *cmdname, const ICommandAr
 #if defined(SM_GENERATED_BUILD)
 		if (SOURCEMOD_UPSTREAM[0] != '\0')
 			ConsolePrint("    Based on upstream: %s (+%s local commits)", SOURCEMOD_UPSTREAM, SOURCEMOD_UPSTREAM_AHEAD);
+		if (SOURCEMOD_UPSTREAM_SHA[0] != '\0')
+			ConsolePrint("    Upstream commit: https://github.com/alliedmodders/sourcemod/commit/%s", SOURCEMOD_UPSTREAM_SHA);
 		ConsolePrint("    Built from: https://github.com/skial-com/sourcemod/commit/%s", SOURCEMOD_SHA);
 		ConsolePrint("    Build ID: %s:%s", SOURCEMOD_LOCAL_REV, SOURCEMOD_SHA);
 #endif

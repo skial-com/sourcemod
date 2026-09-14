@@ -60,10 +60,31 @@ def get_upstream_version():
     return '', '0'
   return m.group(1), m.group(2)
 
+def get_upstream_sha(tag):
+  # SHA of the last upstream commit this build sits on. Prefer the merge-base
+  # with a known upstream tracking ref (accurate even if upstream commits past
+  # the last release tag were merged); fall back to the commit the nearest
+  # upstream release tag points at (always in the repo, needs no remote). The
+  # result is a commit in alliedmodders/sourcemod history, so it resolves there.
+  for ref in ['upstream/master', 'upstream/HEAD']:
+    try:
+      base = run_and_return(['git', 'merge-base', 'HEAD', ref])
+      if base:
+        return base
+    except Exception:
+      pass
+  if tag:
+    try:
+      return run_and_return(['git', 'rev-parse', tag + '^{commit}'])
+    except Exception:
+      pass
+  return ''
+
 def output_version_headers():
   with FolderChanger(SourceFolder):
     count, shorthash, longhash = get_git_version()
     upstream, upstream_ahead = get_upstream_version()
+    upstream_sha = get_upstream_sha(upstream)
 
   with open(os.path.join(SourceFolder, 'product.version')) as fp:
     contents = fp.read().strip()
@@ -89,6 +110,7 @@ def output_version_headers():
 #define SM_BUILD_LOCAL_REV      \"{6}\"
 #define SM_BUILD_UPSTREAM       \"{7}\"
 #define SM_BUILD_UPSTREAM_AHEAD \"{8}\"
+#define SM_BUILD_UPSTREAM_SHA   \"{9}\"
 
 #define SM_BUILD_UNIQUEID       SM_BUILD_LOCAL_REV \":\" SM_BUILD_CSET
 
@@ -96,7 +118,7 @@ def output_version_headers():
 #define SM_VERSION_FILE		{2},{3},{4},{6}
 
 #endif /* _SOURCEMOD_AUTO_VERSION_INFORMATION_H_ */
-    """.format(tag, shorthash, major, minor, release, fullstring, count, upstream, upstream_ahead))
+    """.format(tag, shorthash, major, minor, release, fullstring, count, upstream, upstream_ahead, upstream_sha))
 
   with open(os.path.join(OutputFolder, 'version_auto.inc'), 'w') as fp:
     fp.write("""
