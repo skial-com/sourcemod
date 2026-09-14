@@ -51,6 +51,8 @@
 #define SM_BUILD_TAG		"manual"
 #define SM_BUILD_LOCAL_REV	"0"
 #define SM_BUILD_CSET		"0"
+#define SM_BUILD_UPSTREAM	""
+#define SM_BUILD_UPSTREAM_AHEAD	"0"
 #define SM_BUILD_MAJOR		"1"
 #define SM_BUILD_MINOR		"13"
 #define SM_BUILD_RELEASE	"0"

@@ -45,9 +45,25 @@ def get_git_version():
 
   return revision_count, shorthash, longhash
 
+def get_upstream_version():
+  # The nearest upstream release tag (e.g. "1.13.0.7461") and how many local
+  # commits sit on top of it. Upstream release tags look like N.N.N.N; the
+  # match pattern deliberately ignores local/vendor tags such as "skial-*" or
+  # "production-*" so this reports the last merged upstream build, not ours.
+  try:
+    desc = run_and_return(['git', 'describe', '--long', '--tags',
+                           '--match', '[0-9]*.[0-9]*.[0-9]*.[0-9]*', 'HEAD'])
+  except Exception:
+    return '', '0'
+  m = re.match(r'^(.+)-(\d+)-g[0-9A-Fa-f]+$', desc)
+  if m is None:
+    return '', '0'
+  return m.group(1), m.group(2)
+
 def output_version_headers():
   with FolderChanger(SourceFolder):
     count, shorthash, longhash = get_git_version()
+    upstream, upstream_ahead = get_upstream_version()
 
   with open(os.path.join(SourceFolder, 'product.version')) as fp:
     contents = fp.read().strip()
@@ -71,6 +87,8 @@ def output_version_headers():
 #define SM_BUILD_MINOR		\"{3}\"
 #define SM_BUILD_RELEASE	\"{4}\"
 #define SM_BUILD_LOCAL_REV      \"{6}\"
+#define SM_BUILD_UPSTREAM       \"{7}\"
+#define SM_BUILD_UPSTREAM_AHEAD \"{8}\"
 
 #define SM_BUILD_UNIQUEID       SM_BUILD_LOCAL_REV \":\" SM_BUILD_CSET
 
@@ -78,7 +96,7 @@ def output_version_headers():
 #define SM_VERSION_FILE		{2},{3},{4},{6}
 
 #endif /* _SOURCEMOD_AUTO_VERSION_INFORMATION_H_ */
-    """.format(tag, shorthash, major, minor, release, fullstring, count))
+    """.format(tag, shorthash, major, minor, release, fullstring, count, upstream, upstream_ahead))
 
   with open(os.path.join(OutputFolder, 'version_auto.inc'), 'w') as fp:
     fp.write("""

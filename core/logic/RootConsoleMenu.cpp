@@ -242,7 +242,9 @@ void RootConsoleMenu::OnRootConsoleCommand(const char *cmdname, const ICommandAr
 			ConsolePrint("    SourcePawn Engine: %s (build %s NO JIT)", g_pPawnEnv->GetEngineName(), g_pPawnEnv->GetVersionString());
 		ConsolePrint("    Compiled on: %s", SOURCEMOD_BUILD_TIME);
 #if defined(SM_GENERATED_BUILD)
-		ConsolePrint("    Built from: https://github.com/alliedmodders/sourcemod/commit/%s", SOURCEMOD_SHA);
+		if (SOURCEMOD_UPSTREAM[0] != '\0')
+			ConsolePrint("    Based on upstream: %s (+%s local commits)", SOURCEMOD_UPSTREAM, SOURCEMOD_UPSTREAM_AHEAD);
+		ConsolePrint("    Built from: https://github.com/skial-com/sourcemod/commit/%s", SOURCEMOD_SHA);
 		ConsolePrint("    Build ID: %s:%s", SOURCEMOD_LOCAL_REV, SOURCEMOD_SHA);
 #endif
 		ConsolePrint("    http://www.sourcemod.net/");
