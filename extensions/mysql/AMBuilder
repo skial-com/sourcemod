@@ -20,9 +20,16 @@ if SM.mariadb_root:
       ]
     if binary.compiler.target.platform == 'linux':
       binary.compiler.postlink += [
+        # Group the connector with static OpenSSL so the linker resolves their
+        # circular deps in one pass; without this, ssl objects pulled in by our
+        # SSL_get1_peer_certificate reference leave crypto symbols (e.g.
+        # EVP_PKEY_size) undefined at load on OpenSSL 3.
         '-Wl,-Bstatic',
+        '-Wl,--start-group',
+        os.path.join(SM.mariadb_root[arch], 'lib', 'libmariadbclient.a'),
         '-lssl',
         '-lcrypto',
+        '-Wl,--end-group',
         '-Wl,-Bdynamic',
         '-lz',
         '-lpthread',

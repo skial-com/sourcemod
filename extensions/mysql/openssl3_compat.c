@@ -17,3 +17,13 @@ extern X509 *SSL_get1_peer_certificate(const SSL *ssl);
 __attribute__((weak)) X509 *SSL_get_peer_certificate(const SSL *ssl) {
     return SSL_get1_peer_certificate(ssl);
 }
+
+/* OpenSSL 3 also renamed EVP_PKEY_size -> EVP_PKEY_get_size (old name kept only
+ * as a header macro). Same weak-alias treatment so the connector loads on
+ * OpenSSL 3 while OpenSSL 1.1's strong symbol wins where present. */
+typedef struct evp_pkey_st EVP_PKEY;
+extern int EVP_PKEY_get_size(const EVP_PKEY *pkey);
+
+__attribute__((weak)) int EVP_PKEY_size(const EVP_PKEY *pkey) {
+    return EVP_PKEY_get_size(pkey);
+}
