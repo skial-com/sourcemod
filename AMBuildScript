@@ -240,6 +240,7 @@ class SMConfig(object):
       '-fno-strict-aliasing',
       '-Wall',
       '-Werror',
+      '-Wno-error', # frozen checkpoint force-built on newer clang: keep warnings visible but non-fatal
       '-Wno-unused',
       '-Wno-switch',
       '-Wno-array-bounds',
