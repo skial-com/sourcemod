@@ -66,16 +66,21 @@ def get_upstream_sha(tag):
   # the last release tag were merged); fall back to the commit the nearest
   # upstream release tag points at (always in the repo, needs no remote). The
   # result is a commit in alliedmodders/sourcemod history, so it resolves there.
+  def short(sha):
+    try:
+      return run_and_return(['git', 'rev-parse', '--short', sha])
+    except Exception:
+      return sha[:9]
   for ref in ['upstream/master', 'upstream/HEAD']:
     try:
       base = run_and_return(['git', 'merge-base', 'HEAD', ref])
       if base:
-        return base
+        return short(base)
     except Exception:
       pass
   if tag:
     try:
-      return run_and_return(['git', 'rev-parse', tag + '^{commit}'])
+      return short(run_and_return(['git', 'rev-parse', tag + '^{commit}']))
     except Exception:
       pass
   return ''
