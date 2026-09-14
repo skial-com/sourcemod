@@ -98,9 +98,18 @@ def output_version_headers():
     raise Exception('Could not detremine product version')
   major, minor, release, tag = m.groups()
   product = "{0}.{1}.{2}.{3}".format(major, minor, release, count)
-  fullstring = product
-  if tag != "":
-    fullstring += "-{0}".format(tag)
+  # Fork version string: base it on the last upstream release build and mark it
+  # as ours plus the number of local commits on top, e.g. "1.13.0.7461-skial+20"
+  # (instead of folding those commits into the build number as "1.13.0.7481").
+  # Falls back to the plain upstream/count form when no upstream tag is found.
+  if upstream != "" and upstream_ahead != "0":
+    fullstring = "{0}-skial+{1}".format(upstream, upstream_ahead)
+  elif upstream != "":
+    fullstring = upstream
+  else:
+    fullstring = product
+    if tag != "":
+      fullstring += "-{0}".format(tag)
 
   with open(os.path.join(OutputFolder, 'sourcemod_version_auto.h'), 'w') as fp:
     fp.write("""
