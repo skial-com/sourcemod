@@ -15,7 +15,7 @@ if len(sys.argv) < 3:
   sys.stderr.write('Usage: <symbol-file> <dump-syms-cmd> <args...>\n')
   sys.exit(1)
 
-SYMBOL_SERVER = os.environ['BREAKPAD_SYMBOL_SERVER']
+SYMBOL_SERVER = os.environ.get('BREAKPAD_SYMBOL_SERVER', '')
 symbol_file = sys.argv[1]
 cmd_argv = sys.argv[2:]
 
@@ -38,6 +38,13 @@ err = stderr.decode('utf8')
 with open(symbol_file, 'w') as fp:
   fp.write(out)
   fp.write(err)
+
+# No symbol server configured (e.g. forks without the BREAKPAD_SYMBOL_SERVER
+# repo variable): the local symbol file has been written, so there is nothing
+# left to do. Skip the upload instead of failing with "unknown url type: ''".
+if not SYMBOL_SERVER:
+  sys.stderr.write('BREAKPAD_SYMBOL_SERVER not set; skipping symbol upload.\n')
+  sys.exit(0)
 
 lines = out.splitlines()
 
