@@ -60,6 +60,11 @@ if SM.mariadb_root:
       'mysql/MyStatement.cpp',
       'extension.cpp'
     ]
+
+    # OpenSSL 3 compat shim for the statically-linked MariaDB connector (see the
+    # source file); only relevant to the gcc/clang static-openssl link.
+    if binary.compiler.family == 'gcc' or binary.compiler.family == 'clang':
+      binary.sources += [ 'openssl3_compat.c' ]
   
     if binary.compiler.family == 'msvc' and binary.compiler.version >= 1900:
       binary.sources += [ 'msvc15hack.c' ]
