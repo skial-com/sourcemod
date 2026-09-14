@@ -1,12 +1,8 @@
 name: Build Release
 on:
-  push:
-    branches:
-      - master
-      - '[0-9]+.[0-9]+-dev'
-  # Publishing a GitHub Release is manual: use the "Run workflow" button on
-  # the Actions tab. Pushes still build (CI) but never publish a release; a
-  # workflow_dispatch run publishes one when 'publish_release' is checked.
+  # Builds run on demand only: use the "Run workflow" button on the Actions
+  # tab (or `gh workflow run`). Nothing builds automatically on push. A run
+  # publishes a GitHub Release when 'publish_release' is checked.
   workflow_dispatch:
     inputs:
       publish_release:
