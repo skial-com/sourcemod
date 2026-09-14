@@ -117,22 +117,24 @@ jobs:
           mkdir -p sourcemod
           ../sourcemod/tools/checkout-deps.sh -s ${{ join(fromJson(steps.sdk_list.outputs.sdk_list), ',') }}
 
+          # The MaxMind GeoLite2 database is optional. Forks don't inherit the
+          # MAXMIND_LICENSE_KEY secret, so skip the download (and ship without a
+          # bundled GeoIP db) instead of failing the whole release build.
           if [ -z "$MAXMIND_LICENSE_KEY" ]; then
-            echo "::error::MAXMIND_LICENSE_KEY secret is not configured."
-            exit 1
+            echo "::warning::MAXMIND_LICENSE_KEY secret is not configured; skipping GeoLite2-City database bundling."
+          else
+            geotmpdir=$(mktemp -d)
+            geotar="$geotmpdir/GeoLite2-City.tar.gz"
+            curl -fsSL "https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-City&license_key=$MAXMIND_LICENSE_KEY&suffix=tar.gz" -o "$geotar"
+            tar -xzf "$geotar" -C "$geotmpdir"
+            geommdb=$(find "$geotmpdir" -type f -name 'GeoLite2-City.mmdb' | head -n 1)
+            if [ -z "$geommdb" ]; then
+              echo "::error::GeoLite2-City.mmdb not found in downloaded MaxMind archive."
+              exit 1
+            fi
+            cp "$geommdb" '${{ steps.path_helper.outputs.dependencies }}/GeoLite2-City.mmdb'
+            rm -rf "$geotmpdir"
           fi
-
-          geotmpdir=$(mktemp -d)
-          geotar="$geotmpdir/GeoLite2-City.tar.gz"
-          curl -fsSL "https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-City&license_key=$MAXMIND_LICENSE_KEY&suffix=tar.gz" -o "$geotar"
-          tar -xzf "$geotar" -C "$geotmpdir"
-          geommdb=$(find "$geotmpdir" -type f -name 'GeoLite2-City.mmdb' | head -n 1)
-          if [ -z "$geommdb" ]; then
-            echo "::error::GeoLite2-City.mmdb not found in downloaded MaxMind archive."
-            exit 1
-          fi
-          cp "$geommdb" '${{ steps.path_helper.outputs.dependencies }}/GeoLite2-City.mmdb'
-          rm -rf "$geotmpdir"
 
       - name: Build
         working-directory: sourcemod
@@ -155,8 +157,14 @@ jobs:
             '--mariadb64-path=${{ steps.path_helper.outputs.dependencies }}/mariadb-connector-c-${{ env.MARIADB_CONNECTOR_C_VERSION }}-x86_64'
           ambuild
 
-          mkdir -p package/addons/sourcemod/configs/geoip
-          cp '${{ steps.path_helper.outputs.dependencies }}/GeoLite2-City.mmdb' package/addons/sourcemod/configs/geoip/GeoLite2-City.mmdb
+          # Only bundle the GeoIP db if the dependency step actually fetched it
+          # (skipped on forks without the MAXMIND_LICENSE_KEY secret).
+          if [ -f '${{ steps.path_helper.outputs.dependencies }}/GeoLite2-City.mmdb' ]; then
+            mkdir -p package/addons/sourcemod/configs/geoip
+            cp '${{ steps.path_helper.outputs.dependencies }}/GeoLite2-City.mmdb' package/addons/sourcemod/configs/geoip/GeoLite2-City.mmdb
+          else
+            echo "::warning::GeoLite2-City.mmdb not present; packaging without a bundled GeoIP database."
+          fi
       
       - name: Package
         id: package

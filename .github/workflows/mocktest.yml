@@ -1,13 +1,11 @@
 name: hl2sdk-mock tests
-on: 
-  push:
-    branches:
-     - master
-     - '[0-9]+.[0-9]+-dev'
-  pull_request:
-    branches:
-     - master
-     - '[0-9]+.[0-9]+-dev'
+# Disabled for now: this job is currently broken upstream too (the mock harness
+# fails to find SourceHook's sh_list.h), so it produced only noise on our fork.
+# Automatic push/pull_request triggers are removed; run it manually from the
+# Actions tab (workflow_dispatch) to re-check, and restore the triggers below
+# once the upstream harness is green again.
+on:
+  workflow_dispatch:
 jobs:
   mock:
     runs-on: ubuntu-latest
