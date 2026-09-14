@@ -4,6 +4,19 @@ on:
     branches:
       - master
       - '[0-9]+.[0-9]+-dev'
+  # Publishing a GitHub Release is manual: use the "Run workflow" button on
+  # the Actions tab. Pushes still build (CI) but never publish a release; a
+  # workflow_dispatch run publishes one when 'publish_release' is checked.
+  workflow_dispatch:
+    inputs:
+      publish_release:
+        description: 'Publish a GitHub Release from this build'
+        type: boolean
+        default: true
+      prerelease:
+        description: 'Mark the release as a pre-release'
+        type: boolean
+        default: false
 env:
   ARCH: x86,x86_64
   DUMP_SYMS_VERSION: '2.3.7'
@@ -193,6 +206,7 @@ jobs:
         
       - name: Create Release
         id: create_release
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_release }}
         uses: ncipollo/release-action@v1.21.0
         with:
           # Windows and Linux packages will need to upload to the same release
@@ -215,8 +229,8 @@ jobs:
           generateReleaseNotes: true
                     
           draft: false
-          prerelease: ${{ github.ref == 'refs/heads/master' }}
-          makeLatest: ${{ github.ref != 'refs/heads/master' }}
+          prerelease: ${{ inputs.prerelease }}
+          makeLatest: ${{ !inputs.prerelease }}
           token: ${{ secrets.GITHUB_TOKEN }}
       
       - name: Output PDBs
