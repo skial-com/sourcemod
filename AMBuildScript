@@ -303,7 +303,10 @@ class SMConfig(object):
         ]
     if have_clang or (cxx.version >= 'gcc-4.5'):
         cxx.cxxflags += ['-Wno-reorder']
-    if have_clang and cxx.version >= 'clang-18.0':
+    # clang 20 renamed this warning to -Wuninitialized-const-reference, so the
+    # old spelling errors under -Werror,-Wunknown-warning-option. Only pass it on
+    # the clang versions that know it (18-19); master defers re-adding at clang 21.
+    if have_clang and cxx.version >= 'clang-18.0' and cxx.version < 'clang-20.0':
         cxx.cflags += ['-Wno-uninitialized-const-pointer']
 
     if have_gcc:
