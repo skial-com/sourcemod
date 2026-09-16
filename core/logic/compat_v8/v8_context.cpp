@@ -37,6 +37,7 @@
 
 using namespace SourceMod;
 using namespace SourcePawn;
+using sp::ARRAY_PTR; // ARRAY_PTR moved into namespace sp (base-runtime.h) in sourcepawn 6797adb4
 
 /**
  * Wraps a real IFrameIterator so that Context() hands back an old-layout
