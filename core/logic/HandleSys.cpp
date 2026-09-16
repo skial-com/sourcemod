@@ -578,6 +578,17 @@ bool HandleSystem::CheckAccess(QHandle *pHandle, HandleAccessRight right, const 
 
 HandleError HandleSystem::CloneHandle(QHandle *pHandle, unsigned int index, Handle_t *newhandle, IdentityToken_t *newOwner)
 {
+	/* Refuse to clone a handle that is already being destroyed. Cloning here would
+	 * bump refcount back above zero and, when the clone is released, drive it through
+	 * zero again -- re-entering OnHandleDestroy (double free) and ReleasePrimHandle
+	 * (handle-table corruption). This happens when a menu is rooted (AutoHandleRooter)
+	 * from within its own OnHandleDestroy -> CBaseMenu::Destroy -> Cancel ->
+	 * _CancelClientMenu path (upstream PR #2536 regression). */
+	if (pHandle->is_destroying)
+	{
+		return HandleError_Freed;
+	}
+
 	/* Get a new Handle ID */
 	unsigned int new_index;
 	QHandle *pNewHandle;
