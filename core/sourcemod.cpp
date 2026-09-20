@@ -67,6 +67,7 @@ IGameConfig *g_pGameConf = NULL;
 bool g_Loaded = false;
 bool sm_show_debug_spew = false;
 bool sm_disable_jit = false;
+bool sm_disable_autoexecconfig = false;
 int jit_metadata_flags = JIT_DEBUG_DELETE_ON_EXIT | JIT_DEBUG_PERF_BASIC;
 SMGlobalClass *SMGlobalClass::head = nullptr;
 
@@ -142,6 +143,12 @@ ConfigResult SourceModBase::OnSourceModConfigChanged(const char *key,
 		}
 
 		logicore.SetDebugMetadataFlags(jit_metadata_flags);
+
+		return ConfigResult_Accept;
+	}
+	else if (strcasecmp(key, "DisableAutoExecConfig") == 0)
+	{
+		sm_disable_autoexecconfig = (strcasecmp(value, "yes") == 0) ? true : false;
 
 		return ConfigResult_Accept;
 	}

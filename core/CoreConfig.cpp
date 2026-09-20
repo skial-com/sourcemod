@@ -598,6 +598,13 @@ bool SM_GenerateConfigFile(
 
 bool SM_ExecuteConfig(IPlugin *pl, AutoConfig *cfg, bool can_create)
 {
+	/* If disabled via core.cfg (DisableAutoExecConfig), skip creating,
+	 * regenerating, and exec'ing this plugin's auto-config entirely.
+	 * Useful when multiple servers share a game folder and manage
+	 * plugin convars through their own server-specific configs. */
+	if (sm_disable_autoexecconfig)
+		return false;
+
 	bool will_create = false;
 	
 	/* See if we should be creating */

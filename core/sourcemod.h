@@ -155,6 +155,7 @@ void UTIL_ConsolePrint(const char *fmt, ...);
 
 extern bool g_Loaded;
 extern bool sm_show_debug_spew;
+extern bool sm_disable_autoexecconfig;
 extern SourceModBase g_SourceMod;
 
 #endif //_INCLUDE_SOURCEMOD_GLOBALHEADER_H_
