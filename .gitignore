@@ -41,3 +41,8 @@ objdir
 
 .vs/*
 .vscode/*
+
+# Development tooling artifacts (clangd, bear, python)
+.cache/
+compile_commands.json
+__pycache__/
