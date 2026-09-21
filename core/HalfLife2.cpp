@@ -51,6 +51,22 @@
 #include <vietnam_usermessages.pb.h>
 #endif
 
+// Newer HL2SDK branches (synced from sdk2013) replaced the raw
+// CBaseHandle(int) constructor with the explicit CBaseHandle::UnsafeFromIndex()
+// factory; older branches still provide only the constructor. Pick whichever the
+// current SDK exposes so core builds against both during the transition.
+// :TODO: remove once all supported SDKs expose UnsafeFromIndex.
+template <typename Handle>
+static auto SM_MakeHandleFromIndex(int index, int) -> decltype(Handle::UnsafeFromIndex(index))
+{
+	return Handle::UnsafeFromIndex(index);
+}
+template <typename Handle>
+static Handle SM_MakeHandleFromIndex(int index, long)
+{
+	return Handle(index);
+}
+
 typedef ICommandLine *(*FakeGetCommandLine)();
 
 #define TIER0_NAME			FORMAT_SOURCE_BIN_NAME("tier0")
@@ -1065,11 +1081,7 @@ CBaseEntity *CHalfLife2::ReferenceToEntity(cell_t entRef)
 	{
 		/* Proper ent reference */
 		int hndlValue = entRef & ~ENTREF_MASK;
-#if SOURCE_ENGINE == SE_TF2
-		auto hndl = CBaseHandle::UnsafeFromIndex(hndlValue);
-#else
-		CBaseHandle hndl(hndlValue);
-#endif
+		CBaseHandle hndl = SM_MakeHandleFromIndex<CBaseHandle>(hndlValue, 0);
 
 		pInfo = LookupEntity(hndl.GetEntryIndex());
 		if (!pInfo || pInfo->m_SerialNumber != hndl.GetSerialNumber())
@@ -1173,11 +1185,7 @@ int CHalfLife2::ReferenceToIndex(cell_t entRef)
 	{
 		/* Proper ent reference */
 		int hndlValue = entRef & ~ENTREF_MASK;
-#if SOURCE_ENGINE == SE_TF2
-		auto hndl = CBaseHandle::UnsafeFromIndex(hndlValue);
-#else
-		CBaseHandle hndl(hndlValue);
-#endif
+		CBaseHandle hndl = SM_MakeHandleFromIndex<CBaseHandle>(hndlValue, 0);
 
 		CEntInfo *pInfo = LookupEntity(hndl.GetEntryIndex());
 
@@ -1243,11 +1251,7 @@ cell_t CHalfLife2::ReferenceToBCompatRef(cell_t entRef)
 	}
 
 	int hndlValue = entRef & ~ENTREF_MASK;
-#if SOURCE_ENGINE == SE_TF2
-	auto hndl = CBaseHandle::UnsafeFromIndex(hndlValue);
-#else
-	CBaseHandle hndl(hndlValue);
-#endif
+	CBaseHandle hndl = SM_MakeHandleFromIndex<CBaseHandle>(hndlValue, 0);
 
 	if (hndl.GetEntryIndex() < MAX_EDICTS)
 	{

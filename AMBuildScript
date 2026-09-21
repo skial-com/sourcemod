@@ -328,6 +328,12 @@ class SMConfig(object):
     if cxx.version >= 'clang-21.0':
         cxx.cflags += ['-Wno-uninitialized-const-pointer']
 
+    if cxx.version >= 'clang-22.0':
+        # SDK headers memcpy/memset non-trivially-copyable types (studio.h
+        # vertex/tangent copies, bitvec.h); clang 22 errors on this via
+        # -Wnontrivial-memcall. :TODO: drop once hl2sdk ships its clang-22 fix.
+        cxx.cxxflags += ['-Wno-nontrivial-memcall']
+
     if cxx.version >= 'clang-16.0' or cxx.version >= 'apple-clang-15.0':
         cxx.cxxflags += ['-Wno-deprecated-anon-enum-enum-conversion']
 
