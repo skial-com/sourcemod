@@ -34,6 +34,7 @@
 
 #include <IExtensionSys.h>
 #include <ILibrarySys.h>
+#include <functional>
 #include <list>
 #include <string>
 #include "common_logic.h"
