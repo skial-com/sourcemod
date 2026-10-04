@@ -50,9 +50,12 @@ def get_upstream_version():
   # commits sit on top of it. Upstream release tags look like N.N.N.N; the
   # match pattern deliberately ignores local/vendor tags such as "skial-*" or
   # "production-*" so this reports the last merged upstream build, not ours.
+  # The glob's '*' also matches our own release tags ("1.13.0.7491-skial+14"),
+  # which would stack suffixes on every release, so exclude any tag with a '-'.
   try:
     desc = run_and_return(['git', 'describe', '--long', '--tags',
-                           '--match', '[0-9]*.[0-9]*.[0-9]*.[0-9]*', 'HEAD'])
+                           '--match', '[0-9]*.[0-9]*.[0-9]*.[0-9]*',
+                           '--exclude', '*-*', 'HEAD'])
   except Exception:
     return '', '0'
   m = re.match(r'^(.+)-(\d+)-g[0-9A-Fa-f]+$', desc)

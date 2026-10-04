@@ -200,7 +200,9 @@ jobs:
           # the number of local commits on top, matching the binary version
           # string (tools/buildbot/generate_headers.py), e.g. 1.13.0.7469-skial+32.
           # Fall back to the plain product form if no upstream tag resolves.
-          describe=$(git describe --long --tags --match '[0-9]*.[0-9]*.[0-9]*.[0-9]*' HEAD 2>/dev/null)
+          # --exclude '*-*' skips our own release tags (e.g. 1.13.0.7491-skial+14),
+          # which the glob also matches and would stack suffixes on each release.
+          describe=$(git describe --long --tags --match '[0-9]*.[0-9]*.[0-9]*.[0-9]*' --exclude '*-*' HEAD 2>/dev/null)
           upstream_tag=$(printf '%s' "$describe" | sed -n 's/^\(.*\)-[0-9][0-9]*-g[0-9A-Fa-f][0-9A-Fa-f]*$/\1/p')
           ahead=$(printf '%s' "$describe" | sed -n 's/.*-\([0-9][0-9]*\)-g[0-9A-Fa-f][0-9A-Fa-f]*$/\1/p')
           if [ -n "$upstream_tag" ] && [ "$ahead" != "0" ]; then
