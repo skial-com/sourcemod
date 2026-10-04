@@ -32,7 +32,7 @@
 #define _INCLUDE_SOURCEMOD_NATIVE_OWNER_H_
 
 #include <sp_vm_types.h>
-#include <sh_list.h>
+#include <list>
 #include <am-vector.h>
 #include "common_logic.h"
 #include "Native.h"
@@ -54,8 +54,6 @@ struct WeakNative
 	CPlugin *pl;
 	uint32_t idx;
 };
-
-using namespace SourceHook;
 
 class CNativeOwner
 {
@@ -85,9 +83,9 @@ private:
 	void DropWeakRefsTo(CPlugin *pPlugin);
 	void UnbindWeakRef(const WeakNative & ref);
 protected:
-	List<CPlugin *> m_Dependents;
+	std::list<CPlugin *> m_Dependents;
 	unsigned int m_nMarkSerial;
-	List<WeakNative> m_WeakRefs;
+	std::list<WeakNative> m_WeakRefs;
 	unsigned int m_nativeAbi = 0;
 	std::vector<const sp_nativeinfo_t *> m_natives;
 	std::vector<ke::RefPtr<Native> > m_fakes;

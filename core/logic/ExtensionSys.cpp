@@ -275,7 +275,7 @@ void CExtensionManager::ProcessReloadFrame(void *data)
 	PendingExtensionReload *pending = static_cast<PendingExtensionReload *>(data);
 
 	// Bail if it was unloaded in the gap between frames.
-	if (g_Extensions.m_Libs.find(pending->ext) == g_Extensions.m_Libs.end())
+	if (std::find(g_Extensions.m_Libs.begin(), g_Extensions.m_Libs.end(), pending->ext) == g_Extensions.m_Libs.end())
 	{
 		delete pending;
 		return;
@@ -338,7 +338,7 @@ bool CLocalExtension::Reload(char *error, size_t maxlength)
 				was_running.insert(filename);
 
 			CPlugin *cp = static_cast<CPlugin *>(plugin);
-			if (m_Dependents.find(cp) != m_Dependents.end() &&
+			if (std::find(m_Dependents.begin(), m_Dependents.end(), cp) != m_Dependents.end() &&
 				(status == Plugin_Running || status == Plugin_Paused))
 			{
 				to_reload.push_back({filename, plugin->GetType(), i, status == Plugin_Paused});
@@ -355,14 +355,10 @@ bool CLocalExtension::Reload(char *error, size_t maxlength)
 	// which calls DropRefsTo, removing entries from m_Dependents during iteration.
 	// (UnloadExtension avoids this by removing itself from m_Libs first, but we
 	// can't do that since we need to stay in m_Libs for reload.)
-	List<CPlugin *> dependents_copy = m_Dependents;
+	std::list<CPlugin *> dependents_copy = m_Dependents;
 	m_Dependents.clear();
-	for (List<CPlugin *>::iterator p_iter = dependents_copy.begin();
-		 p_iter != dependents_copy.end();
-		 p_iter++)
-	{
-		scripts->UnloadPlugin((*p_iter));
-	}
+	for (CPlugin *plugin : dependents_copy)
+		scripts->UnloadPlugin(plugin);
 
 	// Step 3b: Collect and unload cascaded victims — plugins that entered Plugin_Error
 	// because they depended on a plugin we just unloaded (not on this extension directly).
@@ -393,12 +389,8 @@ bool CLocalExtension::Reload(char *error, size_t maxlength)
 
 	// Step 4: Clean up extension state to prevent duplicates on reload.
 	g_ShareSys.RemoveInterfaces(this);
-	for (List<String>::iterator s_iter = m_Libraries.begin();
-		 s_iter != m_Libraries.end();
-		 s_iter++)
-	{
-		scripts->OnLibraryAction((*s_iter).c_str(), LibraryAction_Removed);
-	}
+	for (const std::string &lib : m_Libraries)
+		scripts->OnLibraryAction(lib.c_str(), LibraryAction_Removed);
 	m_Libraries.clear();
 	m_Interfaces.clear();
 
@@ -525,7 +517,7 @@ void CExtension::MarkAllLoaded()
 void CExtension::AddPlugin(CPlugin *pPlugin)
 {
 	/* Unfortunately we have to do this :( */
-	if (m_Dependents.find(pPlugin) == m_Dependents.end())
+	if (std::find(m_Dependents.begin(), m_Dependents.end(), pPlugin) == m_Dependents.end())
 	{
 		m_Dependents.push_back(pPlugin);
 	}
@@ -568,7 +560,7 @@ bool CLocalExtension::IsLoaded()
 
 void CExtension::AddDependency(const IfaceInfo *pInfo)
 {
-	if (m_Deps.find(*pInfo) == m_Deps.end())
+	if (std::find(m_Deps.begin(), m_Deps.end(), *pInfo) == m_Deps.end())
 	{
 		m_Deps.push_back(*pInfo);
 	}
@@ -580,8 +572,7 @@ void CExtension::AddChildDependent(CExtension *pOther, SMInterface *iface)
 	info.iface = iface;
 	info.owner = pOther;
 
-	List<IfaceInfo>::iterator iter;
-	for (iter = m_ChildDeps.begin();
+	for (auto iter = m_ChildDeps.begin();
 		 iter != m_ChildDeps.end();
 		 iter++)
 	{
@@ -661,11 +652,9 @@ void CExtensionManager::OnSourceModShutdown()
 
 void CExtensionManager::Shutdown()
 {
-	List<CExtension *>::iterator iter;
-
-	while ((iter = m_Libs.begin()) != m_Libs.end())
+	while (m_Libs.begin() != m_Libs.end())
 	{
-		UnloadExtension((*iter));
+		UnloadExtension((*m_Libs.begin()));
 	}
 }
 
@@ -754,14 +743,13 @@ IExtension *CExtensionManager::LoadAutoExtension(const char *path, bool bErrorOn
 
 IExtension *CExtensionManager::FindExtensionByFile(const char *file)
 {
-	List<CExtension *>::iterator iter;
 	CExtension *pExt;
 
 	/* Chomp off the path */
 	char lookup[PLATFORM_MAX_PATH];
 	libsys->GetFileFromPath(lookup, sizeof(lookup), file);
 
-	for (iter=m_Libs.begin(); iter!=m_Libs.end(); iter++)
+	for (auto iter=m_Libs.begin(); iter!=m_Libs.end(); iter++)
 	{
 		pExt = (*iter);
 		if (pExt->IsSameFile(lookup))
@@ -775,12 +763,11 @@ IExtension *CExtensionManager::FindExtensionByFile(const char *file)
 
 IExtension *CExtensionManager::FindExtensionByName(const char *ext)
 {
-	List<CExtension *>::iterator iter;
 	CExtension *pExt;
 	IExtensionInterface *pAPI;
 	const char *name;
 
-	for (iter=m_Libs.begin(); iter!=m_Libs.end(); iter++)
+	for (auto iter=m_Libs.begin(); iter!=m_Libs.end(); iter++)
 	{
 		pExt = (*iter);
 		if (!pExt->IsLoaded())
@@ -889,9 +876,7 @@ void CExtensionManager::BindChildPlugin(IExtension *pParent, SMPlugin *pPlugin)
 
 void CExtensionManager::OnPluginDestroyed(IPlugin *plugin)
 {
-	List<CExtension *>::iterator iter;
-
-	for (iter=m_Libs.begin(); iter!=m_Libs.end(); iter++)
+	for (auto iter=m_Libs.begin(); iter!=m_Libs.end(); iter++)
 	{
 		(*iter)->DropRefsTo(static_cast<CPlugin *>(plugin));
 	}
@@ -904,7 +889,7 @@ CExtension *CExtensionManager::FindByOrder(unsigned int num)
 		return NULL;
 	}
 
-	List<CExtension *>::iterator iter = m_Libs.begin();
+	auto iter = m_Libs.begin();
 
 	while (iter != m_Libs.end())
 	{
@@ -925,7 +910,8 @@ bool CExtensionManager::UnloadExtension(IExtension *_pExt)
 
 	CExtension *pExt = (CExtension *)_pExt;
 
-	if (m_Libs.find(pExt) == m_Libs.end())
+	auto iter = std::find(m_Libs.begin(), m_Libs.end(), pExt);
+	if (iter == m_Libs.end())
 		return false;
 
 	/* Tell it to unload */
@@ -939,13 +925,13 @@ bool CExtensionManager::UnloadExtension(IExtension *_pExt)
 	g_ShareSys.RemoveInterfaces(_pExt);
 	m_Libs.remove(pExt);
 
-	List<CExtension *> UnloadQueue;
+	std::list<CExtension *> UnloadQueue;
 
 	/* Handle dependencies */
 	if (pExt->IsLoaded())
 	{
 		/* Unload any dependent plugins */
-		List<CPlugin *>::iterator p_iter = pExt->m_Dependents.begin();
+		auto p_iter = pExt->m_Dependents.begin();
 		while (p_iter != pExt->m_Dependents.end())
 		{
 			/* We have to manually unlink ourselves here, since we're no longer being managed */
@@ -953,8 +939,7 @@ bool CExtensionManager::UnloadExtension(IExtension *_pExt)
 			p_iter = pExt->m_Dependents.erase(p_iter);
 		}
 
-		List<String>::iterator s_iter;
-		for (s_iter = pExt->m_Libraries.begin();
+		for (auto s_iter = pExt->m_Libraries.begin();
 			 s_iter != pExt->m_Libraries.end();
 			 s_iter++)
 		{
@@ -962,10 +947,9 @@ bool CExtensionManager::UnloadExtension(IExtension *_pExt)
 		}
 
 		/* Notify and/or unload all dependencies */
-		List<CExtension *>::iterator c_iter;
 		CExtension *pDep;
 		IExtensionInterface *pAPI;
-		for (c_iter = m_Libs.begin(); c_iter != m_Libs.end(); c_iter++)
+		for (auto c_iter = m_Libs.begin(); c_iter != m_Libs.end(); c_iter++)
 		{
 			pDep = (*c_iter);
 			if ((pAPI=pDep->GetAPI()) == NULL)
@@ -974,7 +958,7 @@ bool CExtensionManager::UnloadExtension(IExtension *_pExt)
 				continue;
 			/* Now, get its dependency list */
 			bool dropped = false;
-			List<IfaceInfo>::iterator i_iter = pDep->m_Deps.begin();
+			auto i_iter = pDep->m_Deps.begin();
 			while (i_iter != pDep->m_Deps.end())
 			{
 				if ((*i_iter).owner == _pExt)
@@ -1029,8 +1013,7 @@ bool CExtensionManager::UnloadExtension(IExtension *_pExt)
 	pExt->Unload();
 	delete pExt;
 
-	List<CExtension *>::iterator iter;
-	for (iter=UnloadQueue.begin(); iter!=UnloadQueue.end(); iter++)
+	for (auto iter=UnloadQueue.begin(); iter!=UnloadQueue.end(); iter++)
 	{
 		/* NOTE: This is safe because the unload function backs out of anything not present */
 		UnloadExtension((*iter));
@@ -1041,10 +1024,9 @@ bool CExtensionManager::UnloadExtension(IExtension *_pExt)
 
 void CExtensionManager::MarkAllLoaded()
 {
-	List<CExtension *>::iterator iter;
 	CExtension *pExt;
 
-	for (iter=m_Libs.begin(); iter!=m_Libs.end(); iter++)
+	for (auto iter=m_Libs.begin(); iter!=m_Libs.end(); iter++)
 	{
 		pExt = (*iter);
 		if (!pExt->IsLoaded())
@@ -1079,7 +1061,6 @@ void CExtensionManager::OnRootConsoleCommand(const char *cmdname, const ICommand
 		const char *cmd = command->Arg(2);
 		if (strcmp(cmd, "list") == 0)
 		{
-			List<CExtension *>::iterator iter;
 			CExtension *pExt;
 			unsigned int num = 1;
 
@@ -1101,7 +1082,7 @@ void CExtensionManager::OnRootConsoleCommand(const char *cmdname, const ICommand
 					break;
 				}
 			}
-			for (iter = m_Libs.begin(); iter != m_Libs.end(); iter++,num++)
+			for (auto iter = m_Libs.begin(); iter != m_Libs.end(); iter++,num++)
 			{
 				pExt = (*iter);
 				if (pExt->IsLoaded())
@@ -1197,7 +1178,7 @@ void CExtensionManager::OnRootConsoleCommand(const char *cmdname, const ICommand
 				return;
 			}
 
-			List<CExtension *>::iterator iter = m_Libs.begin();
+			auto iter = m_Libs.begin();
 			CExtension *pExt = NULL;
 			while (iter != m_Libs.end())
 			{
@@ -1305,23 +1286,21 @@ void CExtensionManager::OnRootConsoleCommand(const char *cmdname, const ICommand
 			}
 			else
 			{
-				List<CPlugin *> plugins;
+				std::list<CPlugin *> plugins;
 				if (pExt->m_ChildDeps.size())
 				{
 					rootmenu->ConsolePrint("[SM] Unloading %s will unload the following extensions: ", pExt->GetFilename());
-					List<CExtension *>::iterator iter;
 					CExtension *pOther;
 					/* Get list of all extensions */
-					for (iter=m_Libs.begin(); iter!=m_Libs.end(); iter++)
+					for (auto iter=m_Libs.begin(); iter!=m_Libs.end(); iter++)
 					{
-						List<IfaceInfo>::iterator i_iter;
 						pOther = (*iter);
 						if (!pOther->IsLoaded() || pOther == pExt)
 						{
 							continue;
 						}
 						/* Get their dependencies */
-						for (i_iter=pOther->m_Deps.begin();
+						for (auto i_iter=pOther->m_Deps.begin();
 							 i_iter!=pOther->m_Deps.end();
 							 i_iter++)
 						{
@@ -1335,12 +1314,12 @@ void CExtensionManager::OnRootConsoleCommand(const char *cmdname, const ICommand
 							{
 								rootmenu->ConsolePrint(" -> %s", pOther->GetFilename());
 								/* Add to plugin unload list */
-								List<CPlugin *>::iterator p_iter;
-								for (p_iter=pOther->m_Dependents.begin();
+								for (auto p_iter=pOther->m_Dependents.begin();
 									 p_iter!=pOther->m_Dependents.end();
 									 p_iter++)
 								{
-									if (plugins.find((*p_iter)) == plugins.end())
+									auto lookup = std::find(plugins.begin(), plugins.end(), (*p_iter));
+									if (lookup == plugins.end())
 									{
 										plugins.push_back((*p_iter));
 									}
@@ -1352,17 +1331,17 @@ void CExtensionManager::OnRootConsoleCommand(const char *cmdname, const ICommand
 				if (pExt->m_Dependents.size())
 				{
 					rootmenu->ConsolePrint("[SM] Unloading %s will unload the following plugins: ", pExt->GetFilename());
-					List<CPlugin *>::iterator iter;
 					CPlugin *pPlugin;
-					for (iter = pExt->m_Dependents.begin(); iter != pExt->m_Dependents.end(); iter++)
+					for (auto iter = pExt->m_Dependents.begin(); iter != pExt->m_Dependents.end(); iter++)
 					{
 						pPlugin = (*iter);
-						if (plugins.find(pPlugin) == plugins.end())
+						auto lookup = std::find(plugins.begin(), plugins.end(), pPlugin);
+						if (lookup == plugins.end())
 						{
 							plugins.push_back(pPlugin);
 						}
 					}
-					for (iter = plugins.begin(); iter != plugins.end(); iter++)
+					for (auto iter = plugins.begin(); iter != plugins.end(); iter++)
 					{
 						pPlugin = (*iter);
 						rootmenu->ConsolePrint(" -> %s", pPlugin->GetFilename());
@@ -1480,12 +1459,12 @@ bool CExtensionManager::LibraryExists(const char *library)
 {
 	CExtension *pExt;
 
-	for (List<CExtension *>::iterator iter = m_Libs.begin();
+	for (auto iter = m_Libs.begin();
 		 iter != m_Libs.end();
 		 iter++)
 	{
 		pExt = (*iter);
-		for (List<String>::iterator s_iter = pExt->m_Libraries.begin();
+		for (auto s_iter = pExt->m_Libraries.begin();
 			 s_iter != pExt->m_Libraries.end();
 			 s_iter++)
 		{
@@ -1499,21 +1478,14 @@ bool CExtensionManager::LibraryExists(const char *library)
 	return false;
 }
 
-void CExtensionManager::ForEachLibrary(ke::Function<void(const char *)> callback)
+void CExtensionManager::ForEachLibrary(std::function<void(const char *)> callback)
 {
-	for (List<CExtension *>::iterator iter = m_Libs.begin();
-		 iter != m_Libs.end();
-		 iter++)
+	for (CExtension *pExt : m_Libs)
 	{
-		CExtension *pExt = (*iter);
 		if (!pExt->IsLoaded())
 			continue;
-		for (List<String>::iterator s_iter = pExt->m_Libraries.begin();
-			 s_iter != pExt->m_Libraries.end();
-			 s_iter++)
-		{
-			callback((*s_iter).c_str());
-		}
+		for (const std::string &lib : pExt->m_Libraries)
+			callback(lib.c_str());
 	}
 }
 
@@ -1546,9 +1518,8 @@ IExtension *CExtensionManager::LoadExternal(IExtensionInterface *pInterface,
 void CExtensionManager::CallOnCoreMapStart(edict_t *pEdictList, int edictCount, int clientMax)
 {
 	IExtensionInterface *pAPI;
-	List<CExtension *>::iterator iter;
 
-	for (iter=m_Libs.begin(); iter!=m_Libs.end(); iter++)
+	for (auto iter=m_Libs.begin(); iter!=m_Libs.end(); iter++)
 	{
 		if ((pAPI = (*iter)->GetAPI()) == NULL)
 		{
@@ -1564,9 +1535,8 @@ void CExtensionManager::CallOnCoreMapStart(edict_t *pEdictList, int edictCount, 
 void CExtensionManager::CallOnCoreMapEnd()
 {
 	IExtensionInterface *pAPI;
-	List<CExtension *>::iterator iter;
 
-	for (iter=m_Libs.begin(); iter!=m_Libs.end(); iter++)
+	for (auto iter=m_Libs.begin(); iter!=m_Libs.end(); iter++)
 	{
 		if ((pAPI = (*iter)->GetAPI()) == NULL)
 		{
@@ -1579,17 +1549,17 @@ void CExtensionManager::CallOnCoreMapEnd()
 	}
 }
 
-const CVector<IExtension *> *CExtensionManager::ListExtensions()
+const std::vector<IExtension *> *CExtensionManager::ListExtensions()
 {
-	CVector<IExtension *> *list = new CVector<IExtension *>();
-	for (List<CExtension *>::iterator iter = m_Libs.begin(); iter != m_Libs.end(); iter++)
+	std::vector<IExtension *> *list = new std::vector<IExtension *>();
+	for (auto iter = m_Libs.begin(); iter != m_Libs.end(); iter++)
 		list->push_back(*iter);
 	return list;
 }
 
-void CExtensionManager::FreeExtensionList(const CVector<IExtension *> *list)
+void CExtensionManager::FreeExtensionList(const std::vector<IExtension *> *list)
 {
-	delete const_cast<CVector<IExtension *> *>(list);
+	delete const_cast<std::vector<IExtension *> *>(list);
 }
 
 bool CLocalExtension::IsSameFile(const char *file)

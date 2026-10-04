@@ -34,8 +34,8 @@
 
 #include <IExtensionSys.h>
 #include <ILibrarySys.h>
-#include <sh_list.h>
-#include <sh_string.h>
+#include <list>
+#include <string>
 #include "common_logic.h"
 #include <IPluginSys.h>
 #include <IRootConsoleMenu.h>
@@ -47,7 +47,6 @@
 class CPlayer;
 
 using namespace SourceMod;
-using namespace SourceHook;
 
 class CExtension;
 
@@ -99,14 +98,14 @@ protected:
 protected:
 	IdentityToken_t *m_pIdentToken;
 	IExtensionInterface *m_pAPI;
-	String m_File;
-	String m_RealFile;
-	String m_Path;
-	String m_Error;
-	List<IfaceInfo> m_Deps;			/** Dependencies */
-	List<IfaceInfo> m_ChildDeps;	/** Children who might depend on us */
-	List<SMInterface *> m_Interfaces;
-	List<String> m_Libraries;
+	std::string m_File;
+	std::string m_RealFile;
+	std::string m_Path;
+	std::string m_Error;
+	std::list<IfaceInfo> m_Deps;			/** Dependencies */
+	std::list<IfaceInfo> m_ChildDeps;	/** Children who might depend on us */
+	std::list<SMInterface *> m_Interfaces;
+	std::list<std::string> m_Libraries;
 	unsigned int unload_code;
 	unsigned int m_ApiVersion = 0;
 	bool m_bFullyLoaded;
@@ -180,12 +179,12 @@ public:
 	void TryAutoload();
 	void AddLibrary(IExtension *pSource, const char *library);
 	bool LibraryExists(const char *library);
-	void ForEachLibrary(ke::Function<void(const char *)> callback);
+	void ForEachLibrary(std::function<void(const char *)> callback);
 	void CallOnCoreMapStart(edict_t *pEdictList, int edictCount, int clientMax);
 	void CallOnCoreMapEnd();
 	void AddRawDependency(IExtension *ext, IdentityToken_t *other, void *iface);
-	const CVector<IExtension *> *ListExtensions();
-	void FreeExtensionList(const CVector<IExtension *> *list);
+	const std::vector<IExtension *> *ListExtensions();
+	void FreeExtensionList(const std::vector<IExtension *> *list);
 public:
 	CExtension *GetExtensionFromIdent(IdentityToken_t *ptr);
 	void Shutdown();
@@ -201,7 +200,7 @@ public:
 private:
 	CExtension *FindByOrder(unsigned int num);
 private:
-	List<CExtension *> m_Libs;
+	std::list<CExtension *> m_Libs;
 };
 
 extern CExtensionManager g_Extensions;
