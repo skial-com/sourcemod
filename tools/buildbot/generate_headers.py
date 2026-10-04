@@ -45,17 +45,34 @@ def get_git_version():
 
   return revision_count, shorthash, longhash
 
+UPSTREAM_TAG_ARGS = ['--match', '[0-9]*.[0-9]*.[0-9]*.[0-9]*', '--exclude', '*-*']
+
 def get_upstream_version():
-  # The nearest upstream release tag (e.g. "1.13.0.7461") and how many local
-  # commits sit on top of it. Upstream release tags look like N.N.N.N; the
-  # match pattern deliberately ignores local/vendor tags such as "skial-*" or
-  # "production-*" so this reports the last merged upstream build, not ours.
-  # The glob's '*' also matches our own release tags ("1.13.0.7491-skial+14"),
-  # which would stack suffixes on every release, so exclude any tag with a '-'.
+  # The last upstream release tag we have merged (e.g. "1.13.0.7469") and the
+  # number of local (non-merge) commits on top of upstream.
+  #
+  # With an upstream tracking ref, both come from upstream's own history: the
+  # tag is the newest one at our merge-base with upstream, and the count is the
+  # commits upstream doesn't have. Our own release tags can never be chosen,
+  # even ones that look like upstream's (an old plain "1.13.0.7491"), and
+  # upstream commits merged in are never counted as ours.
+  for ref in ['upstream/master', 'upstream/HEAD']:
+    try:
+      base = run_and_return(['git', 'merge-base', 'HEAD', ref])
+      tag = run_and_return(['git', 'describe', '--tags', '--abbrev=0'] +
+                           UPSTREAM_TAG_ARGS + [base])
+      ahead = run_and_return(['git', 'rev-list', '--count', '--no-merges',
+                              ref + '..HEAD'])
+      return tag, ahead
+    except Exception:
+      pass
+
+  # No upstream ref: fall back to the nearest upstream-looking tag. The glob's
+  # '*' also matches our own release tags ("1.13.0.7491-skial+14"), which would
+  # stack suffixes on every release, so exclude any tag with a '-'.
   try:
-    desc = run_and_return(['git', 'describe', '--long', '--tags',
-                           '--match', '[0-9]*.[0-9]*.[0-9]*.[0-9]*',
-                           '--exclude', '*-*', 'HEAD'])
+    desc = run_and_return(['git', 'describe', '--long', '--tags'] +
+                          UPSTREAM_TAG_ARGS + ['HEAD'])
   except Exception:
     return '', '0'
   m = re.match(r'^(.+)-(\d+)-g[0-9A-Fa-f]+$', desc)
@@ -102,7 +119,7 @@ def output_version_headers():
   major, minor, release, tag = m.groups()
   product = "{0}.{1}.{2}.{3}".format(major, minor, release, count)
   # Fork version string: base it on the last upstream release build and mark it
-  # as ours plus the number of local commits on top, e.g. "1.13.0.7461-skial+20"
+  # as ours plus the number of local commits on top, e.g. "1.13.0.7469-skial+35"
   # (instead of folding those commits into the build number as "1.13.0.7481").
   # Falls back to the plain upstream/count form when no upstream tag is found.
   if upstream != "" and upstream_ahead != "0":

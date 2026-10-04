@@ -52,14 +52,13 @@ jobs:
         working-directory: sourcemod
         shell: bash
         run: |
-          # The fork's version string (tools/buildbot/generate_headers.py)
-          # is derived from the nearest upstream release tag. CI checks out
-          # skial-com, which lacks the upstream N.N.N.N tags, so fetch them
-          # here. This lets both the built binary and the release version
-          # resolve to "<version>-skial+<n>" instead of the plain fallback.
+          # The fork's version string (tools/buildbot/generate_headers.py) is
+          # "<upstream tag>-skial+<local commits>", computed against upstream's
+          # history. CI checks out skial-com, which lacks upstream's N.N.N.N tags
+          # and master, so fetch both here.
           git config --global --add safe.directory '*' || true
           git remote add upstream https://github.com/alliedmodders/sourcemod.git 2>/dev/null || true
-          git fetch --no-recurse-submodules upstream '+refs/tags/*:refs/tags/*' || true
+          git fetch --no-recurse-submodules upstream '+refs/tags/*:refs/tags/*' '+refs/heads/master:refs/remotes/upstream/master' || true
       
       - name: Install Windows dependencies
         if: startsWith(matrix.os, 'windows')
@@ -196,20 +195,11 @@ jobs:
           version_base=$(cat ../../product.version)
           version_base=${version_base%-dev} # Ex. 1.12.0
           version_rev=$(git rev-list --count HEAD)
-          # Base the release version on the nearest upstream release tag plus
-          # the number of local commits on top, matching the binary version
-          # string (tools/buildbot/generate_headers.py), e.g. 1.13.0.7469-skial+32.
-          # Fall back to the plain product form if no upstream tag resolves.
-          # --exclude '*-*' skips our own release tags (e.g. 1.13.0.7491-skial+14),
-          # which the glob also matches and would stack suffixes on each release.
-          describe=$(git describe --long --tags --match '[0-9]*.[0-9]*.[0-9]*.[0-9]*' --exclude '*-*' HEAD 2>/dev/null)
-          upstream_tag=$(printf '%s' "$describe" | sed -n 's/^\(.*\)-[0-9][0-9]*-g[0-9A-Fa-f][0-9A-Fa-f]*$/\1/p')
-          ahead=$(printf '%s' "$describe" | sed -n 's/.*-\([0-9][0-9]*\)-g[0-9A-Fa-f][0-9A-Fa-f]*$/\1/p')
-          if [ -n "$upstream_tag" ] && [ "$ahead" != "0" ]; then
-            version="${upstream_tag}-skial+${ahead}"
-          elif [ -n "$upstream_tag" ]; then
-            version="${upstream_tag}"
-          else
+          # Name the release after the version string compiled into the binary
+          # (tools/buildbot/generate_headers.py), e.g. 1.13.0.7469-skial+35, so
+          # the two can never disagree. Fall back to the plain product form.
+          version=$(sed -n 's/^#define SM_VERSION_STRING[[:space:]]*"\(.*\)"/\1/p' ../includes/sourcemod_version_auto.h 2>/dev/null)
+          if [ -z "$version" ]; then
             version="${version_base}.${version_rev}"
           fi
 
