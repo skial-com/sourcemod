@@ -652,9 +652,37 @@ void CExtensionManager::OnSourceModShutdown()
 
 void CExtensionManager::Shutdown()
 {
-	while (m_Libs.begin() != m_Libs.end())
+	// Unload dependents before the extensions they depend on. Otherwise an
+	// extension can be unloaded while a dependent still holds objects it
+	// created, e.g. sdktools freeing SDKCall handles whose call wrappers
+	// live in bintools.
+	auto has_dependents = [this](CExtension *pExt) -> bool {
+		for (CExtension *pOther : m_Libs)
+		{
+			if (pOther == pExt)
+				continue;
+			for (const IfaceInfo &info : pOther->m_Deps)
+			{
+				if (info.owner == pExt)
+					return true;
+			}
+		}
+		return false;
+	};
+
+	while (!m_Libs.empty())
 	{
-		UnloadExtension((*m_Libs.begin()));
+		// Fall back to list order if every extension has a dependent (cycle).
+		CExtension *pExt = m_Libs.front();
+		for (CExtension *pCandidate : m_Libs)
+		{
+			if (!has_dependents(pCandidate))
+			{
+				pExt = pCandidate;
+				break;
+			}
+		}
+		UnloadExtension(pExt);
 	}
 }
 

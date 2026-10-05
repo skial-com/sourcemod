@@ -891,7 +891,26 @@ CPluginManager::~CPluginManager()
 
 void CPluginManager::Shutdown()
 {
-	UnloadAll();
+	// No frame runs after this, so unloads deferred to the next frame (e.g.
+	// requested from a plugin's OnMapEnd during the forced LevelShutdown)
+	// would never happen. Those plugins would keep their handles alive into
+	// extension shutdown, where freeing them can call into extensions that
+	// are already unloaded. Finish them here instead.
+	for (PluginIter iter(m_plugins); !iter.done(); iter.next()) {
+		CPlugin *pPlugin = (*iter);
+		if (pPlugin->State() == PluginState::WaitingToUnload ||
+			pPlugin->State() == PluginState::WaitingToUnloadAndReload)
+		{
+			UnloadPluginImpl(pPlugin);
+		}
+		else
+		{
+			UnloadPlugin(pPlugin);
+		}
+	}
+
+	// Pending unload/reload tasks reference plugins freed above.
+	ClearScheduledFrameTasks();
 }
 
 void CPluginManager::LoadAll(const char *config_path, const char *plugins_path)

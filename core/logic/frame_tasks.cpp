@@ -54,3 +54,9 @@ SourceMod::RunScheduledFrameTasks(bool simulating)
 		sWorkTasks[i]();
 	sWorkTasks.clear();
 }
+
+void
+SourceMod::ClearScheduledFrameTasks()
+{
+	sNextTasks.clear();
+}

@@ -35,6 +35,9 @@ void ScheduleTaskForNextFrame(std::function<void()>&& task);
 
 void RunScheduledFrameTasks(bool simulating);
 
+// Drops tasks scheduled for the next frame without running them.
+void ClearScheduledFrameTasks();
+
 }
 
 #endif // _include_sourcemod_logic_frame_tasks_h_
