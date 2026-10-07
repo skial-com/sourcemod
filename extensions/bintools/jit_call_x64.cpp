@@ -671,51 +671,54 @@ inline int ClassifyObject(const PassInfo *info, ObjectClass *classes)
 {
 	ObjectField *fields = info->fields;
 	unsigned int numFields = info->numFields;
-	int numWords = 1;
 
 	if (info->size > 16 || info->flags & PASSFLAG_OUNALIGN)
-		classes[0] = ObjectClass::Memory;
-	else if (info->flags & (PASSFLAG_ODTOR|PASSFLAG_OCOPYCTOR))
-		classes[0] = ObjectClass::Pointer;
-	else if (info->size > 8)
-		classes[0] = ObjectClass::None;
-	else if (numFields == 1 || numFields == 2)
-		classes[0] = ClassifyType(fields[0]);
-	else
-		classes[0] = ObjectClass::Integer;
-
-	if (classes[0] == ObjectClass::None)
 	{
-		numWords = int((info->size + 7) / 8);
-
-		unsigned int j = 0;
-		for (int i = 0; i < numWords; i++)
-		{
-			classes[i] = ObjectClass::None;
-			size_t sizeSoFar = 0;
-			for (int k = 0; j < numFields; j++, k++)
-			{
-				size_t sz = TypeSize(fields[j]);
-				if (sizeSoFar + sz > 8)
-					break;
-				else
-					sizeSoFar += sz;
-
-				if (k == 0 && sizeSoFar == 8) {
-					classes[i] = ClassifyType(fields[j++]);
-					break;
-				} else if (j + 1 >= numFields) {
-					break;
-				}
-
-				const ObjectField &field1 = fields[j];
-				const ObjectField &field2 = fields[j + 1];
-				
-				classes[i] = MergeClasses(ClassifyType(field1), ClassifyType(field2));
-			}
-		}
+		classes[0] = ObjectClass::Memory;
+		return 1;
 	}
-		
+	if (info->flags & (PASSFLAG_ODTOR|PASSFLAG_OCOPYCTOR))
+	{
+		classes[0] = ObjectClass::Pointer;
+		return 1;
+	}
+
+	int numWords = int((info->size + 7) / 8);
+	if (numWords < 1)
+		numWords = 1;
+
+	// Without field info, treat the object as opaque integer data
+	if (numFields == 0)
+	{
+		for (int i = 0; i < numWords; i++)
+			classes[i] = ObjectClass::Integer;
+		return numWords;
+	}
+
+	for (int i = 0; i < numWords; i++)
+		classes[i] = ObjectClass::None;
+
+	// SysV: lay the fields out at their natural alignment and merge each
+	// field's class into the eightbyte that contains it
+	size_t offset = 0;
+	for (unsigned int j = 0; j < numFields; j++)
+	{
+		size_t sz = TypeSize(fields[j]);
+		offset = (offset + sz - 1) & ~(sz - 1);
+		int word = int(offset / 8);
+		if (word >= numWords)
+			break;
+		classes[word] = MergeClasses(classes[word], ClassifyType(fields[j]));
+		offset += sz;
+	}
+
+	// Padding-only eightbytes still have to be passed somewhere
+	for (int i = 0; i < numWords; i++)
+	{
+		if (classes[i] == ObjectClass::None)
+			classes[i] = ObjectClass::Integer;
+	}
+
 	return numWords;
 }
 
