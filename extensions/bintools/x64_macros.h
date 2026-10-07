@@ -305,6 +305,37 @@ inline void X64_Movupd_Rm_Disp8_Reg(JitWriter *jit, jit_uint8_t dest, jit_uint8_
 	jit->write_byte(disp);
 }
 
+inline void X64_Movss_Rm_Reg(JitWriter *jit, jit_uint8_t dest, jit_uint8_t src)
+{
+	jit->write_ubyte(0xF3);
+	if (dest >= kREG_XMM8 || src >= kREG_XMM8)
+		jit->write_ubyte(x64_rex(false, src, 0, dest));
+	jit->write_ubyte(0x0F);
+	jit->write_ubyte(0x11);
+	jit->write_ubyte(ia32_modrm(MOD_MEM_REG, src & 7, dest & 7));
+}
+
+inline void X64_Movsd_Rm_Reg(JitWriter *jit, jit_uint8_t dest, jit_uint8_t src)
+{
+	jit->write_ubyte(0xF2);
+	if (dest >= kREG_XMM8 || src >= kREG_XMM8)
+		jit->write_ubyte(x64_rex(false, src, 0, dest));
+	jit->write_ubyte(0x0F);
+	jit->write_ubyte(0x11);
+	jit->write_ubyte(ia32_modrm(MOD_MEM_REG, src & 7, dest & 7));
+}
+
+inline void X64_Movsd_Rm_Disp8_Reg(JitWriter *jit, jit_uint8_t dest, jit_uint8_t src, jit_int8_t disp)
+{
+	jit->write_ubyte(0xF2);
+	if (dest >= kREG_XMM8 || src >= kREG_XMM8)
+		jit->write_ubyte(x64_rex(false, src, 0, dest));
+	jit->write_ubyte(0x0F);
+	jit->write_ubyte(0x11);
+	jit->write_ubyte(ia32_modrm(MOD_DISP8, src & 7, dest & 7));
+	jit->write_byte(disp);
+}
+
 inline void X64_Movaps_Rm_Disp8_Reg(JitWriter *jit, jit_uint8_t dest, jit_uint8_t src, jit_int8_t disp)
 {
 	if (dest >= kREG_XMM8 || src >= kREG_XMM8)

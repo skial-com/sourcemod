@@ -956,14 +956,14 @@ inline void Write_MovRet2Buf(JitWriter *jit, const PassInfo *pRet, ObjectClass *
 		{
 		case 4:
 			{
-				//movups xmmword ptr [r14], xmm0
-				X64_Movups_Rm_Reg(jit, kREG_R14, kREG_XMM0);
+				//movss dword ptr [r14], xmm0
+				X64_Movss_Rm_Reg(jit, kREG_R14, kREG_XMM0);
 				break;
 			}
 		case 8:
 			{
-				//movupd xmmword ptr [r14], xmm0
-				X64_Movupd_Rm_Reg(jit, kREG_R14, kREG_XMM0);
+				//movsd qword ptr [r14], xmm0
+				X64_Movsd_Rm_Reg(jit, kREG_R14, kREG_XMM0);
 				break;
 			}
 		}
@@ -1024,11 +1024,11 @@ inline void Write_MovRet2Buf(JitWriter *jit, const PassInfo *pRet, ObjectClass *
 			}
 			else if (cls == ObjectClass::SSE)
 			{
-				//movupd xmmword ptr [r14+offset], floatRetReg 	; xmm0 or xmm1
+				//movsd qword ptr [r14+offset], floatRetReg 	; xmm0 or xmm1
 				if (!offset)
-					X64_Movupd_Rm_Reg(jit, kREG_R14, floatRetReg);
+					X64_Movsd_Rm_Reg(jit, kREG_R14, floatRetReg);
 				else
-					X64_Movupd_Rm_Disp8_Reg(jit, kREG_R14, floatRetReg, offset);
+					X64_Movsd_Rm_Disp8_Reg(jit, kREG_R14, floatRetReg, offset);
 				floatRetReg = kREG_XMM1;
 			}
 			offset += 8;
