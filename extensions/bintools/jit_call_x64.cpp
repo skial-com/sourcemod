@@ -273,6 +273,76 @@ inline void Write_Function_Epilogue(JitWriter *jit, bool is_void, bool has_param
 	X64_Return(jit);
 }
 
+// Load exactly <size> (1-8) bytes from [rbx+<offset>] into reg, zero-extended.
+// Sizes other than 1/2/4/8 are assembled from smaller loads so we never read
+// past the end of the parameter.
+inline void Write_LoadParam(JitWriter *jit, jit_uint8_t reg, unsigned int offset, size_t size)
+{
+	switch (size)
+	{
+		case 1:
+			if (!offset)
+				X64_Movzx_Reg64_Rm8(jit, reg, kREG_RBX, MOD_MEM_REG);
+			else if (offset < SCHAR_MAX)
+				X64_Movzx_Reg64_Rm8_Disp8(jit, reg, kREG_RBX, (jit_int8_t)offset);
+			else
+				X64_Movzx_Reg64_Rm8_Disp32(jit, reg, kREG_RBX, offset);
+			break;
+		case 2:
+			if (!offset)
+				X64_Movzx_Reg64_Rm16(jit, reg, kREG_RBX, MOD_MEM_REG);
+			else if (offset < SCHAR_MAX)
+				X64_Movzx_Reg64_Rm16_Disp8(jit, reg, kREG_RBX, (jit_int8_t)offset);
+			else
+				X64_Movzx_Reg64_Rm16_Disp32(jit, reg, kREG_RBX, offset);
+			break;
+		case 4:
+			if (!offset)
+				X64_Mov_Reg32_Rm(jit, reg, kREG_RBX, MOD_MEM_REG);
+			else if (offset < SCHAR_MAX)
+				X64_Mov_Reg32_Rm_Disp8(jit, reg, kREG_RBX, (jit_int8_t)offset);
+			else
+				X64_Mov_Reg32_Rm_Disp32(jit, reg, kREG_RBX, offset);
+			break;
+		case 8:
+			if (!offset)
+				X64_Mov_Reg_Rm(jit, reg, kREG_RBX, MOD_MEM_REG);
+			else if (offset < SCHAR_MAX)
+				X64_Mov_Reg_Rm_Disp8(jit, reg, kREG_RBX, (jit_int8_t)offset);
+			else
+				X64_Mov_Reg_Rm_Disp32(jit, reg, kREG_RBX, offset);
+			break;
+		default:
+		{
+			// 3, 5, 6, 7: low piece into reg, then shift/or the rest in from r10/r11
+			jit_uint8_t tmp = (reg == kREG_R11) ? kREG_R10 : kREG_R11;
+			size_t done = (size & 4) ? 4 : (size & 2) ? 2 : 1;
+			Write_LoadParam(jit, reg, offset, done);
+			while (done < size)
+			{
+				size_t left = size - done;
+				size_t piece = (left & 4) ? 4 : (left & 2) ? 2 : 1;
+				Write_LoadParam(jit, tmp, offset + done, piece);
+				X64_Shl_Reg_Imm8(jit, tmp, (jit_uint8_t)(done * 8));
+				X64_Or_Reg_Reg(jit, reg, tmp);
+				done += piece;
+			}
+			break;
+		}
+	}
+}
+
+// mov [rsp+<g_StackUsage>], reg
+inline void Write_StoreStackSlot(JitWriter *jit, jit_uint8_t reg)
+{
+	if (g_StackUsage == 0)
+		X64_Mov_RmRSP_Reg(jit, reg);
+	else if (g_StackUsage < SCHAR_MAX)
+		X64_Mov_RmRSP_Disp8_Reg(jit, reg, (jit_int8_t)g_StackUsage);
+	else
+		X64_Mov_RmRSP_Disp32_Reg(jit, reg, g_StackUsage);
+}
+
 inline jit_uint8_t Write_PushPOD(JitWriter *jit, const SourceHook::PassInfo *info, unsigned int offset)
 {
 	bool needStack = false;
@@ -289,52 +359,11 @@ inline jit_uint8_t Write_PushPOD(JitWriter *jit, const SourceHook::PassInfo *inf
 	{
 		switch (info->size)
 		{
-			case 1:
+			default:
 			{
-				//movzx reg, BYTE PTR [ebx+<offset>]
-				if (!offset)
-					X64_Movzx_Reg64_Rm8(jit, reg, kREG_RBX, MOD_MEM_REG);
-				else if (offset < SCHAR_MAX)
-					X64_Movzx_Reg64_Rm8_Disp8(jit, reg, kREG_RBX, (jit_int8_t)offset);
-				else
-					X64_Movzx_Reg64_Rm8_Disp32(jit, reg, kREG_RBX, offset);
-
-				break;
-			}
-			case 2:
-			{
-				//movzx reg, WORD PTR [ebx+<offset>]
-				if (!offset)
-					X64_Movzx_Reg64_Rm16(jit, reg, kREG_RBX, MOD_MEM_REG);
-				else if (offset < SCHAR_MAX)
-					X64_Movzx_Reg64_Rm16_Disp8(jit, reg, kREG_RBX, (jit_int8_t)offset);
-				else
-					X64_Movzx_Reg64_Rm16_Disp32(jit, reg, kREG_RBX, offset);
-
-				break;
-			}
-			case 4:
-			{
-				//mov reg, DWORD PTR [ebx+<offset>]
-				if (!offset)
-					X64_Mov_Reg32_Rm(jit, reg, kREG_RBX, MOD_MEM_REG);
-				else if (offset < SCHAR_MAX)
-					X64_Mov_Reg32_Rm_Disp8(jit, reg, kREG_EBX, (jit_int8_t)offset);
-				else
-					X64_Mov_Reg32_Rm_Disp32(jit, reg, kREG_RBX, offset);
-
-				break;
-			}
-			case 8:
-			{
-				//mov reg, DWORD PTR [ebx+<offset>]
-				if (!offset)
-					X64_Mov_Reg_Rm(jit, reg, kREG_RBX, MOD_MEM_REG);
-				else if (offset < SCHAR_MAX)
-					X64_Mov_Reg_Rm_Disp8(jit, reg, kREG_EBX, (jit_int8_t)offset);
-				else
-					X64_Mov_Reg_Rm_Disp32(jit, reg, kREG_RBX, offset);
-
+				//mov reg, <size> PTR [ebx+<offset>]   (zero-extended)
+				assert(info->size <= 8);
+				Write_LoadParam(jit, reg, offset, info->size);
 				break;
 			}
 			case 16:
@@ -401,9 +430,19 @@ inline jit_uint8_t Write_PushPOD(JitWriter *jit, const SourceHook::PassInfo *inf
 
 inline void Write_PushFloat(JitWriter *jit, const SourceHook::PassInfo *info, unsigned int offset, uint8_t *floatRegs)
 {
+	if (info->flags & PASSFLAG_BYREF)
+	{
+		//lea reg, [ebx+<offset>]
+		// A pointer goes in an integer register; don't consume an xmm register for it
+		SourceHook::PassInfo ptrInfo = *info;
+		ptrInfo.size = sizeof(void *);
+		Write_PushPOD(jit, &ptrInfo, offset);
+		return;
+	}
+
 	bool needStack = false;
 	jit_uint8_t floatReg = NextFloatReg(info->size);
-	jit_uint8_t floatReg2;
+	jit_uint8_t floatReg2 = INVALID_REG;
 	
 	if (floatReg == STACK_PARAM)
 	{
@@ -411,131 +450,41 @@ inline void Write_PushFloat(JitWriter *jit, const SourceHook::PassInfo *info, un
 		needStack = true;
 	}
 	
-	if (info->flags & PASSFLAG_BYVAL)
+	// The parameter stack is not guaranteed to be 16-byte aligned and the value
+	// may sit at its very end, so load exactly the value's width.
+	switch (info->size)
 	{
-		switch (info->size)
-		{
-			case 4:
-			{
-				//if offset % 16 == 0
-				// movaps floatReg, [ebx+<offset>]
-				//else
-				// movups floatReg, [ebx+<offset>]
-				if (!offset) {
-					X64_Movaps_Rm(jit, floatReg, kREG_EBX);
-				} else if (offset < SCHAR_MAX) {
-					if (offset % 16 == 0)
-						X64_Movaps_Rm_Disp8(jit, floatReg, kREG_EBX, (jit_int8_t)offset);
-					else
-						X64_Movups_Rm_Disp8(jit, floatReg, kREG_EBX, (jit_int8_t)offset);
-				} else {
-					if (offset % 16 == 0)
-						X64_Movaps_Rm_Disp32(jit, floatReg, kREG_EBX, offset);
-					else
-						X64_Movups_Rm_Disp32(jit, floatReg, kREG_EBX, offset);
-				}
-				break;
-			}
-			case 8:
-			{
-				//if offset % 16 == 0
-				// movapd floatReg, [ebx+<offset>]
-				//else
-				// movupd floatReg, [ebx+<offset>]
-				if (!offset) {
-					X64_Movapd_Rm(jit, floatReg, kREG_EBX);
-				} else if (offset < SCHAR_MAX) {
-					if (offset % 16 == 0)
-						X64_Movapd_Rm_Disp8(jit, floatReg, kREG_EBX, (jit_int8_t)offset);
-					else
-						X64_Movupd_Rm_Disp8(jit, floatReg, kREG_EBX, (jit_int8_t)offset);
-				} else {
-					if (offset % 16 == 0)
-						X64_Movapd_Rm_Disp32(jit, floatReg, kREG_EBX, offset);
-					else
-						X64_Movupd_Rm_Disp32(jit, floatReg, kREG_EBX, offset);
-				}
-				break;
-			}
-			case 16:
-				//if offset % 16 == 0
-				// movaps floatReg, [ebx+<offset>]
-				//else
-				// movads floatReg, [ebx+<offset>]
-				//if (offset+8) % 16 == 0
-				// movaps floatReg2, [ebx+<offset>+8]
-				//else
-				// movads floatReg2, [ebx+<offset>+8]
-				floatReg2 = needStack ? NextScratchFloatReg() : NextFloatReg(8);
-
-				if (!offset) {
-					X64_Movaps_Rm(jit, floatReg, kREG_EBX);
-				} else if (offset < SCHAR_MAX) {
-					if (offset % 16 == 0)
-						X64_Movaps_Rm_Disp8(jit, floatReg, kREG_EBX, (jit_int8_t)offset);
-					else
-						X64_Movups_Rm_Disp8(jit, floatReg, kREG_EBX, (jit_int8_t)offset);
-				} else {
-					if (offset % 16 == 0)
-						X64_Movaps_Rm_Disp32(jit, floatReg, kREG_EBX, offset);
-					else
-						X64_Movups_Rm_Disp32(jit, floatReg, kREG_EBX, offset);
-				}
-
-				if (offset + 8 < SCHAR_MAX) {
-					if ((offset + 8) % 16 == 0)
-						X64_Movaps_Rm_Disp8(jit, floatReg2, kREG_EBX, (jit_int8_t)(offset + 8));
-					else
-						X64_Movups_Rm_Disp8(jit, floatReg2, kREG_EBX, (jit_int8_t)(offset + 8));
-				} else {
-					if ((offset + 8) % 16 == 0)
-						X64_Movaps_Rm_Disp32(jit, floatReg2, kREG_EBX, offset + 8);
-					else
-						X64_Movups_Rm_Disp32(jit, floatReg2, kREG_EBX, offset + 8);
-				}
-		}
-	} else if (info->flags & PASSFLAG_BYREF) {
-		//lea reg, [ebx+<offset>]
-		Write_PushPOD(jit, info, offset);
-		return;
+		case 4:
+			//movss floatReg, [ebx+<offset>]
+			X64_Movss_Load(jit, floatReg, kREG_RBX, offset);
+			break;
+		case 8:
+			//movsd floatReg, [ebx+<offset>]
+			X64_Movsd_Load(jit, floatReg, kREG_RBX, offset);
+			break;
+		case 16:
+			//movsd floatReg, [ebx+<offset>]
+			//movsd floatReg2, [ebx+<offset>+8]
+			floatReg2 = needStack ? NextScratchFloatReg() : NextFloatReg(8);
+			X64_Movsd_Load(jit, floatReg, kREG_RBX, offset);
+			X64_Movsd_Load(jit, floatReg2, kREG_RBX, offset + 8);
+			break;
 	}
 	
 	if (needStack)
 	{
-		// Move register value onto stack
-		//if g_StackUsage == 0
-		// movaps [rsp], floatReg
-		//else
-		// movaps [rsp+<g_StackUsage>], floatReg
+		// Each stack argument occupies an 8-byte slot; store only the value
+		//movss/movsd [rsp+<g_StackUsage>], floatReg
 		//if info->size == 16
-		// movaps [rsp+<g_StackUsage>+8], floatReg2
-		if (g_StackUsage == 0) {
-			X64_Movaps_Rm_Reg(jit, kREG_RSP, floatReg);
-		} else if (g_StackUsage < SCHAR_MAX) {
-			if (g_StackUsage % 16 == 0)
-				X64_Movaps_Rm_Disp8_Reg(jit, kREG_RSP, floatReg, (jit_int8_t)g_StackUsage);
-			else
-				X64_Movups_Rm_Disp8_Reg(jit, kREG_RSP, floatReg, (jit_int8_t)g_StackUsage);
-		} else {
-			if (g_StackUsage % 16 == 0)
-				X64_Movaps_Rm_Disp32_Reg(jit, kREG_RSP, floatReg, g_StackUsage);
-			else
-				X64_Movups_Rm_Disp32_Reg(jit, kREG_RSP, floatReg, g_StackUsage);
-		}
+		// movsd [rsp+<g_StackUsage>+8], floatReg2
+		if (info->size == 4)
+			X64_Movss_Store(jit, kREG_RSP, g_StackUsage, floatReg);
+		else
+			X64_Movsd_Store(jit, kREG_RSP, g_StackUsage, floatReg);
 			
 		if (info->size == 16)
 		{
-			if (g_StackUsage + 8 < SCHAR_MAX) {
-				if ((g_StackUsage + 8) % 16 == 0)
-					X64_Movaps_Rm_Disp8_Reg(jit, kREG_RSP, floatReg2, (jit_int8_t)g_StackUsage+8);
-				else
-					X64_Movups_Rm_Disp8_Reg(jit, kREG_RSP, floatReg2, (jit_int8_t)g_StackUsage+8);
-			} else {
-				if ((g_StackUsage + 8) % 16 == 0)
-					X64_Movaps_Rm_Disp32_Reg(jit, kREG_RSP, floatReg2, g_StackUsage+8);
-				else
-					X64_Movups_Rm_Disp32_Reg(jit, kREG_RSP, floatReg2, g_StackUsage+8);
-			}
+			X64_Movsd_Store(jit, kREG_RSP, g_StackUsage + 8, floatReg2);
 			g_StackUsage += 16;
 		} else {
 			g_StackUsage += 8;
@@ -545,7 +494,7 @@ inline void Write_PushFloat(JitWriter *jit, const SourceHook::PassInfo *info, un
 	if (floatRegs)
 	{
 		floatRegs[0] = floatReg;
-		floatRegs[1] = info->size == 16 ? floatReg2 : INVALID_REG;
+		floatRegs[1] = floatReg2;
 	}
 }
 
@@ -731,32 +680,49 @@ inline void Write_PushObject(JitWriter *jit, const SourceHook::PassInfo *info, u
 		ObjectClass classes[MAX_CLASSES];
 		int numWords = ClassifyObject(smInfo, classes);
 
-		if (classes[0] == ObjectClass::Pointer || classes[0] == ObjectClass::Memory)
+		// Non-trivially copyable objects are passed as a pointer to a copy
+		if (classes[0] == ObjectClass::Pointer)
 			goto push_byref;
 
-		int neededIntRegs = 0;
-		int neededFloatRegs = 0;
-		for (int i = 0; i < numWords; i++)
+		if (classes[0] != ObjectClass::Memory)
 		{
-			switch (classes[i])
+			int neededIntRegs = 0;
+			int neededFloatRegs = 0;
+			for (int i = 0; i < numWords; i++)
 			{
-				case ObjectClass::Integer:
-					neededIntRegs++;
-					break;
-				case ObjectClass::SSE:
-					neededFloatRegs++;
-					break;
-				default:
-					assert(false);
-					break;
+				switch (classes[i])
+				{
+					case ObjectClass::Integer:
+						neededIntRegs++;
+						break;
+					case ObjectClass::SSE:
+						neededFloatRegs++;
+						break;
+					default:
+						assert(false);
+						break;
+				}
+			}
+
+			// If the whole object doesn't fit in the remaining registers it goes on the stack
+			if (neededIntRegs + g_PODCount > INT_REG_MAX || 
+				 neededFloatRegs + g_FloatCount > FLOAT_REG_MAX)
+				classes[0] = ObjectClass::Memory;
+		}
+
+		if (classes[0] == ObjectClass::Memory)
+		{
+			// Copy the object into consecutive 8-byte stack slots
+			for (size_t pos = 0; pos < info->size; pos += 8)
+			{
+				size_t chunk = (info->size - pos > 8) ? 8 : info->size - pos;
+				jit_uint8_t reg = NextScratchReg();
+				Write_LoadParam(jit, reg, offset + pos, chunk);
+				Write_StoreStackSlot(jit, reg);
+				g_StackUsage += 8;
 			}
 		}
-			
-		if (neededIntRegs + g_PODCount > INT_REG_MAX || 
-			 neededFloatRegs + g_FloatCount > FLOAT_REG_MAX)
-			classes[0] = ObjectClass::Memory;
-
-		if (classes[0] != ObjectClass::Memory)
+		else
 		{
 			size_t sizeLeft = info->size;
 			for (int i = 0; i < numWords; i++)
@@ -899,10 +865,10 @@ inline void Write_CallFunction(JitWriter *jit, FuncAddrMethod method, CallWrappe
 			jitoffs_t call = X64_Call_Imm32(jit, 0);
 			X64_Write_Jump32_Abs(jit, call, pWrapper->GetCalleeAddr());
 		} else {
-			//mov rax, <addr>
-			//call rax
-			X64_Mov_Reg_Imm64(jit, kREG_RAX, (jit_int64_t)pWrapper->GetCalleeAddr());
-			X64_Call_Reg(jit, kREG_RAX);
+			//mov r11, <addr>
+			//call r11		; not rax, which holds the varargs vector count
+			X64_Mov_Reg_Imm64(jit, kREG_R11, (jit_int64_t)pWrapper->GetCalleeAddr());
+			X64_Call_Reg(jit, kREG_R11);
 		}
 	} else if (method == FuncAddr_VTable) {
 		//*(this + thisOffs + vtblOffs)[vtblIdx]		
@@ -948,6 +914,21 @@ inline void Write_RectifyStack(JitWriter *jit, jit_uint32_t value)
 		X64_Add_Rm_Imm8(jit, kREG_RSP, (jit_int8_t)value, MOD_REG);
 	} else {
 		X64_Add_Rm_Imm32(jit, kREG_RSP, value, MOD_REG);
+	}
+}
+
+// Store the low <size> bytes of reg to [r14+<disp>], lowest piece first. Clobbers reg.
+inline void Write_StoreRetBytes(JitWriter *jit, jit_int32_t disp, jit_uint8_t reg, size_t size)
+{
+	size_t done = 0;
+	while (done < size)
+	{
+		size_t left = size - done;
+		size_t piece = (left >= 8) ? 8 : (left & 4) ? 4 : (left & 2) ? 2 : 1;
+		X64_Mov_Mem_Reg_Sized(jit, kREG_R14, disp + (jit_int32_t)done, reg, (int)piece);
+		done += piece;
+		if (done < size)
+			X64_Shr_Reg_Imm8(jit, reg, (jit_uint8_t)(piece * 8));
 	}
 }
 
@@ -1012,29 +993,31 @@ inline void Write_MovRet2Buf(JitWriter *jit, const PassInfo *pRet, ObjectClass *
 
 		assert(numWords <= 2);
 
+		size_t sizeLeft = pRet->size;
+
 		for (int i = 0; i < numWords; i++)
 		{
 			ObjectClass &cls = classes[i];
+			size_t chunk = (sizeLeft > 8) ? 8 : sizeLeft;
 		
+			// Store only the bytes the object has left; the buffer is sized to the object
 			if (cls == ObjectClass::Integer)
 			{
-				//mov QWORD PTR [r14+offset], intRetReg 		; rax or rdx
-				if (!offset)
-					X64_Mov_Rm_Reg(jit, kREG_R14, intRetReg, MOD_MEM_REG);
-				else
-					X64_Mov_Rm_Reg_Disp8(jit, kREG_R14, intRetReg, offset);
+				//mov <chunk> PTR [r14+offset], intRetReg 		; rax or rdx
+				Write_StoreRetBytes(jit, offset, intRetReg, chunk);
 				intRetReg = kREG_RDX;
 			}
 			else if (cls == ObjectClass::SSE)
 			{
-				//movsd qword ptr [r14+offset], floatRetReg 	; xmm0 or xmm1
-				if (!offset)
-					X64_Movsd_Rm_Reg(jit, kREG_R14, floatRetReg);
+				//movss/movsd [r14+offset], floatRetReg 	; xmm0 or xmm1
+				if (chunk <= 4)
+					X64_Movss_Store(jit, kREG_R14, offset, floatRetReg);
 				else
-					X64_Movsd_Rm_Disp8_Reg(jit, kREG_R14, floatRetReg, offset);
+					X64_Movsd_Store(jit, kREG_R14, offset, floatRetReg);
 				floatRetReg = kREG_XMM1;
 			}
 			offset += 8;
+			sizeLeft -= chunk;
 		}
 	}
 #endif
@@ -1065,6 +1048,14 @@ void *JIT_CallCompile(CallWrapper *pWrapper, FuncAddrMethod method)
 #elif defined PLATFORM_WINDOWS
 	g_StackUsage = 32;	// Shadow space
 #endif
+	// Reset all codegen state so the sizing pass matches the emitting pass
+	// instead of starting from the previous wrapper's leftovers
+	g_StackAlign = 0;
+	g_RegDecoder = 0;
+	g_FloatRegDecoder = 0;
+	g_PODCount = 0;
+	g_FloatCount = 0;
+	g_ParamCount = 0;
 
 	writer.outbase = NULL;
 	writer.outptr = NULL;
@@ -1155,20 +1146,22 @@ skip_retbuffer:
 		}
 	}
 
-	/* Write the calling code */
-	Write_CallFunction(jit, method, pWrapper);
-	
 #ifdef PLATFORM_POSIX
+	/* Varargs callees read the number of vector registers used from al */
 	if (pWrapper->GetFunctionFlags() & FNFLAG_VARARGS)
 		Write_VarArgFloatCount(jit);
 #endif
+
+	/* Write the calling code */
+	Write_CallFunction(jit, method, pWrapper);
 
 	/* Clean up the calling stack */
 #ifdef PLATFORM_POSIX
 	if (hasParams && g_StackUsage)
 #endif
 	{
-		Write_RectifyStack(jit, g_StackAlign);
+		/* Size this as imm32 in the sizing pass; g_StackAlign isn't known yet */
+		Write_RectifyStack(jit, writer.outbase ? g_StackAlign : 1337);
 	}
 
 	/* Copy the return type to the return buffer if the function is not void */

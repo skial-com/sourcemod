@@ -336,6 +336,96 @@ inline void X64_Movsd_Rm_Disp8_Reg(JitWriter *jit, jit_uint8_t dest, jit_uint8_t
 	jit->write_byte(disp);
 }
 
+// ModRM (+SIB, +disp) for [base+disp], picking the shortest displacement
+inline void X64_Write_MemOperand(JitWriter *jit, jit_uint8_t reg, jit_uint8_t base, jit_int32_t disp)
+{
+	jit_uint8_t mode;
+	if (disp == 0 && (base & 7) != kREG_RBP)
+		mode = MOD_MEM_REG;
+	else if (disp >= SCHAR_MIN && disp <= SCHAR_MAX)
+		mode = MOD_DISP8;
+	else
+		mode = MOD_DISP32;
+	jit->write_ubyte(ia32_modrm(mode, reg & 7, base & 7));
+	if ((base & 7) == kREG_RSP)
+		jit->write_ubyte(ia32_sib(NOSCALE, kREG_NOIDX, kREG_RSP));
+	if (mode == MOD_DISP8)
+		jit->write_byte((jit_int8_t)disp);
+	else if (mode == MOD_DISP32)
+		jit->write_int32(disp);
+}
+
+// Scalar SSE load (op 0x10) or store (op 0x11) of xmm <-> [base+disp]
+// prefix 0xF3 = movss (4 bytes), 0xF2 = movsd (8 bytes)
+inline void X64_SSE_Scalar_Mem(JitWriter *jit, jit_uint8_t prefix, jit_uint8_t op, jit_uint8_t xmm, jit_uint8_t base, jit_int32_t disp)
+{
+	jit->write_ubyte(prefix);
+	if (xmm >= kREG_XMM8 || base >= kREG_R8)
+		jit->write_ubyte(x64_rex(false, xmm, 0, base));
+	jit->write_ubyte(0x0F);
+	jit->write_ubyte(op);
+	X64_Write_MemOperand(jit, xmm, base, disp);
+}
+
+inline void X64_Movss_Load(JitWriter *jit, jit_uint8_t xmm, jit_uint8_t base, jit_int32_t disp)
+{
+	X64_SSE_Scalar_Mem(jit, 0xF3, 0x10, xmm, base, disp);
+}
+
+inline void X64_Movsd_Load(JitWriter *jit, jit_uint8_t xmm, jit_uint8_t base, jit_int32_t disp)
+{
+	X64_SSE_Scalar_Mem(jit, 0xF2, 0x10, xmm, base, disp);
+}
+
+inline void X64_Movss_Store(JitWriter *jit, jit_uint8_t base, jit_int32_t disp, jit_uint8_t xmm)
+{
+	X64_SSE_Scalar_Mem(jit, 0xF3, 0x11, xmm, base, disp);
+}
+
+inline void X64_Movsd_Store(JitWriter *jit, jit_uint8_t base, jit_int32_t disp, jit_uint8_t xmm)
+{
+	X64_SSE_Scalar_Mem(jit, 0xF2, 0x11, xmm, base, disp);
+}
+
+// mov <size> ptr [base+disp], src  (size 1, 2, 4 or 8)
+inline void X64_Mov_Mem_Reg_Sized(JitWriter *jit, jit_uint8_t base, jit_int32_t disp, jit_uint8_t src, int size)
+{
+	if (size == 2)
+		jit->write_ubyte(0x66);
+	// REX is also required to address sil/dil/spl/bpl as byte registers
+	if (size == 8 || src >= kREG_R8 || base >= kREG_R8 || (size == 1 && src >= kREG_RSP))
+		jit->write_ubyte(x64_rex(size == 8, src, 0, base));
+	jit->write_ubyte(size == 1 ? 0x88 : 0x89);
+	X64_Write_MemOperand(jit, src, base, disp);
+}
+
+// shl/shr reg, imm8
+inline void X64_Shift_Reg_Imm8(JitWriter *jit, jit_uint8_t reg, jit_uint8_t ext, jit_uint8_t count)
+{
+	jit->write_ubyte(x64_rex(true, 0, 0, reg));
+	jit->write_ubyte(0xC1);
+	jit->write_ubyte(ia32_modrm(MOD_REG, ext, reg & 7));
+	jit->write_ubyte(count);
+}
+
+inline void X64_Shl_Reg_Imm8(JitWriter *jit, jit_uint8_t reg, jit_uint8_t count)
+{
+	X64_Shift_Reg_Imm8(jit, reg, 4, count);
+}
+
+inline void X64_Shr_Reg_Imm8(JitWriter *jit, jit_uint8_t reg, jit_uint8_t count)
+{
+	X64_Shift_Reg_Imm8(jit, reg, 5, count);
+}
+
+// or dest, src
+inline void X64_Or_Reg_Reg(JitWriter *jit, jit_uint8_t dest, jit_uint8_t src)
+{
+	jit->write_ubyte(x64_rex(true, src, 0, dest));
+	jit->write_ubyte(0x09);
+	jit->write_ubyte(ia32_modrm(MOD_REG, src & 7, dest & 7));
+}
+
 inline void X64_Movaps_Rm_Disp8_Reg(JitWriter *jit, jit_uint8_t dest, jit_uint8_t src, jit_int8_t disp)
 {
 	if (dest >= kREG_XMM8 || src >= kREG_XMM8)
