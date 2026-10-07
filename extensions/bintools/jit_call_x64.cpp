@@ -621,14 +621,16 @@ inline int ClassifyObject(const PassInfo *info, ObjectClass *classes)
 	ObjectField *fields = info->fields;
 	unsigned int numFields = info->numFields;
 
-	if (info->size > 16 || info->flags & PASSFLAG_OUNALIGN)
-	{
-		classes[0] = ObjectClass::Memory;
-		return 1;
-	}
+	// Non-trivially copyable objects go by invisible reference whatever their
+	// size; this must come before the size check (e.g. 24-byte variant_t)
 	if (info->flags & (PASSFLAG_ODTOR|PASSFLAG_OCOPYCTOR))
 	{
 		classes[0] = ObjectClass::Pointer;
+		return 1;
+	}
+	if (info->size > 16 || info->flags & PASSFLAG_OUNALIGN)
+	{
+		classes[0] = ObjectClass::Memory;
 		return 1;
 	}
 
