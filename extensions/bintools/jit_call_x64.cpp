@@ -983,6 +983,14 @@ inline void Write_MovRet2Buf(JitWriter *jit, const PassInfo *pRet, ObjectClass *
 				X64_Mov_Rm_Reg(jit, kREG_R14, kREG_RAX, MOD_MEM_REG);
 				break;
 			}
+		case 16:
+			{
+				//mov QWORD PTR [r14], rax
+				//mov QWORD PTR [r14+8], rdx
+				X64_Mov_Mem_Reg_Sized(jit, kREG_R14, 0, kREG_RAX, 8);
+				X64_Mov_Mem_Reg_Sized(jit, kREG_R14, 8, kREG_RDX, 8);
+				break;
+			}
 		}
 	}
 #ifdef PLATFORM_POSIX
