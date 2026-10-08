@@ -1,0 +1,18 @@
+#ifndef _INCLUDE_SOURCEMOD_EXTENSION_CONFIG_H_
+#define _INCLUDE_SOURCEMOD_EXTENSION_CONFIG_H_
+
+#define SMEXT_CONF_NAME			"BinTools Test"
+#define SMEXT_CONF_DESCRIPTION	"x86_64 bintools ABI test suite"
+#define SMEXT_CONF_VERSION		"1.0"
+#define SMEXT_CONF_AUTHOR		"Skial"
+#define SMEXT_CONF_URL			"http://www.skial.com"
+#define SMEXT_CONF_LOGTAG		"BTTEST"
+#define SMEXT_CONF_LICENSE		"GPL"
+#define SMEXT_CONF_DATESTRING	__DATE__
+
+#define SMEXT_LINK(name) SDKExtension *g_pExtensionIface = name;
+
+#define SMEXT_ENABLE_GAMEHELPERS
+#define SMEXT_ENABLE_ROOTCONSOLEMENU
+
+#endif // _INCLUDE_SOURCEMOD_EXTENSION_CONFIG_H_
