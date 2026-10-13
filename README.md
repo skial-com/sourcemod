@@ -24,6 +24,8 @@ Improvements over the original so far
   https://github.com/alliedmodders/sourcemod/pull/2417
 - Mysql now sets the connection charset to utf8mb4. This is needed because when the driver autoreconnects, it will revert the charset back to the default.
 
+Update: Improvements will no longer be listed here, they are too numerous to list now. Check the commit history here and in submodules like sourcepawn and safetyhook for details.
+
 General
 -------
 - [SourceMod website](http://www.sourcemod.net): Source Engine scripting and server administration
