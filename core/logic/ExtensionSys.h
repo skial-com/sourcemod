@@ -186,6 +186,8 @@ public:
 	void AddRawDependency(IExtension *ext, IdentityToken_t *other, void *iface);
 	const std::vector<IExtension *> *ListExtensions();
 	void FreeExtensionList(const std::vector<IExtension *> *list);
+private:
+	void TryAutoloadDir(const char *dir);
 public:
 	CExtension *GetExtensionFromIdent(IdentityToken_t *ptr);
 	void Shutdown();

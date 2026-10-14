@@ -688,9 +688,20 @@ void CExtensionManager::Shutdown()
 
 void CExtensionManager::TryAutoload()
 {
+	TryAutoloadDir("extensions");
+
+	/* Also accept .autoload files next to the binaries in the arch folder. */
+	if (PLATFORM_ARCH_FOLDER[0] != '\0')
+	{
+		TryAutoloadDir("extensions/" PLATFORM_ARCH_FOLDER);
+	}
+}
+
+void CExtensionManager::TryAutoloadDir(const char *dir)
+{
 	char path[PLATFORM_MAX_PATH];
 
-	g_pSM->BuildPath(Path_SM, path, sizeof(path), "extensions");
+	g_pSM->BuildPath(Path_SM, path, sizeof(path), "%s", dir);
 
 	std::unique_ptr<IDirectory> pDir(libsys->OpenDirectory(path));
 	if (!pDir)
