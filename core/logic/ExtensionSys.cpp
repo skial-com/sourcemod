@@ -942,6 +942,31 @@ CExtension *CExtensionManager::FindByOrder(unsigned int num)
 	return NULL;
 }
 
+CExtension *CExtensionManager::FindByOrderOrFile(const char *arg)
+{
+	unsigned int num = atoi(arg);
+	if (num != 0)
+	{
+		CExtension *pExt = FindByOrder(num);
+		if (!pExt)
+			rootmenu->ConsolePrint("[SM] Extension number %d was not found.", num);
+		return pExt;
+	}
+
+	char path[PLATFORM_MAX_PATH];
+	ke::SafeSprintf(path, sizeof(path), "%s%s", arg, !strstr(arg, ".ext") ? ".ext" : "");
+
+	/* Strip platform extension if present, m_File doesn't include it. */
+	const char *ext = libsys->GetFileExtension(path);
+	if (ext && strcmp(ext, PLATFORM_LIB_EXT) == 0)
+		path[strlen(path) - strlen(PLATFORM_LIB_EXT) - 1] = '\0';
+
+	CExtension *pExt = (CExtension *)FindExtensionByFile(path);
+	if (!pExt)
+		rootmenu->ConsolePrint("[SM] Extension %s is not loaded.", path);
+	return pExt;
+}
+
 bool CExtensionManager::UnloadExtension(IExtension *_pExt)
 {
 	if (!_pExt)
@@ -1283,19 +1308,14 @@ void CExtensionManager::OnRootConsoleCommand(const char *cmdname, const ICommand
 		{
 			if (argcount < 4)
 			{
-				rootmenu->ConsolePrint("[SM] Usage: sm exts unload <#> [code]");
+				rootmenu->ConsolePrint("[SM] Usage: sm exts unload <# or file> [code]");
 				return;
 			}
 
 			const char *arg = command->Arg(3);
-			unsigned int num = atoi(arg);
-			CExtension *pExt = FindByOrder(num);
-
+			CExtension *pExt = FindByOrderOrFile(arg);
 			if (!pExt)
-			{
-				rootmenu->ConsolePrint("[SM] Extension number %d was not found.", num);
 				return;
-			}
 
 			if (argcount > 4 && pExt->unload_code)
 			{
@@ -1388,7 +1408,7 @@ void CExtensionManager::OnRootConsoleCommand(const char *cmdname, const ICommand
 				}
 				pExt->unload_code = (rand() % 877) + 123;	//123 to 999
 				rootmenu->ConsolePrint("[SM] To verify unloading %s, please use the following: ", pExt->GetFilename());
-				rootmenu->ConsolePrint("[SM] sm exts unload %d %d", num, pExt->unload_code);
+				rootmenu->ConsolePrint("[SM] sm exts unload %s %d", arg, pExt->unload_code);
 
 				return;
 			}
@@ -1402,35 +1422,9 @@ void CExtensionManager::OnRootConsoleCommand(const char *cmdname, const ICommand
 			}
 
 			const char *arg = command->Arg(3);
-			unsigned int num = atoi(arg);
-			CExtension *pExt;
-
-			if (num != 0)
-			{
-				pExt = FindByOrder(num);
-				if (!pExt)
-				{
-					rootmenu->ConsolePrint("[SM] Extension number %d was not found.", num);
-					return;
-				}
-			}
-			else
-			{
-				char path[PLATFORM_MAX_PATH];
-				ke::SafeSprintf(path, sizeof(path), "%s%s", arg, !strstr(arg, ".ext") ? ".ext" : "");
-
-				/* Strip platform extension if present, m_File doesn't include it. */
-				const char *ext = libsys->GetFileExtension(path);
-				if (ext && strcmp(ext, PLATFORM_LIB_EXT) == 0)
-					path[strlen(path) - strlen(PLATFORM_LIB_EXT) - 1] = '\0';
-
-				pExt = (CExtension *)FindExtensionByFile(path);
-				if (!pExt)
-				{
-					rootmenu->ConsolePrint("[SM] Extension %s is not loaded.", path);
-					return;
-				}
-			}
+			CExtension *pExt = FindByOrderOrFile(arg);
+			if (!pExt)
+				return;
 			
 			if (pExt->IsLoaded())
 			{
@@ -1466,7 +1460,7 @@ void CExtensionManager::OnRootConsoleCommand(const char *cmdname, const ICommand
 	rootmenu->DrawGenericOption("list", "List extensions");
 	rootmenu->DrawGenericOption("load", "Load an extension");
 	rootmenu->DrawGenericOption("reload", "Reload an extension by # or file");
-	rootmenu->DrawGenericOption("unload", "Unload an extension");
+	rootmenu->DrawGenericOption("unload", "Unload an extension by # or file");
 }
 
 CExtension *CExtensionManager::GetExtensionFromIdent(IdentityToken_t *ptr)

@@ -202,6 +202,7 @@ public:
 	}
 private:
 	CExtension *FindByOrder(unsigned int num);
+	CExtension *FindByOrderOrFile(const char *arg);
 private:
 	std::list<CExtension *> m_Libs;
 };
