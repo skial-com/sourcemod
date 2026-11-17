@@ -20,9 +20,7 @@ Improvements over the original so far
 Extensions
 - Old extensions built against the previous SourcePawn ABI still load.
 - `sm exts reload` and `sm exts unload` accept a name, file name or number. Reloading waits for the old image to unmap, so C++ globals reinitialize, and plugins that depend on the extension reload automatically.
-  https://github.com/alliedmodders/sourcemod/pull/2418
 - OnLibraryAdded fires for extension-based libraries.
-  https://github.com/alliedmodders/sourcemod/pull/2417
 - On x64, `.autoload` files next to the binaries in `extensions/x64/` are picked up.
 
 Core
@@ -50,14 +48,6 @@ SafetyHook ([skial-com/safetyhook](https://github.com/skial-com/safetyhook))
 
 Upstream SourceMod and SourcePawn are merged regularly. The commit history here and in the submodules has the full details.
 
-General
--------
-- [SourceMod website](http://www.sourcemod.net): Source Engine scripting and server administration
-- [Forum](https://forums.alliedmods.net/forumdisplay.php?f=52): Discussion forum including plugin/extension development
-- [General documentation](https://wiki.alliedmods.net/Category:SourceMod_Documentation): Miscellaneous information about SourceMod
-- [Stable builds](http://www.sourcemod.net/downloads.php?branch=stable): The latest stable SourceMod releases
-- [Dev builds](http://www.sourcemod.net/downloads.php?branch=dev): Builds of recent development versions
- 
 License
 -------
 SourceMod is licensed under the GNU General Public License version 3. Special exceptions are outlined in the LICENSE.txt file inside of the licenses folder.
