@@ -17,14 +17,38 @@ First class support will be provided for TF2 on Linux as that is what we use.
 
 Improvements over the original so far
 -------
-- The latest version of sourcemod blocks old extensions from loading. This fork allows old extensions to load. 
-- You can now do sm exts reload with name or number. Plugins that depend on the extension will automatically reload.
+Extensions
+- Old extensions built against the previous SourcePawn ABI still load.
+- `sm exts reload` and `sm exts unload` accept a name, file name or number. Reloading waits for the old image to unmap, so C++ globals reinitialize, and plugins that depend on the extension reload automatically.
   https://github.com/alliedmodders/sourcemod/pull/2418
-- OnLibraryAdded now fires for extension based libraries.
+- OnLibraryAdded fires for extension-based libraries.
   https://github.com/alliedmodders/sourcemod/pull/2417
-- Mysql now sets the connection charset to utf8mb4. This is needed because when the driver autoreconnects, it will revert the charset back to the default.
+- On x64, `.autoload` files next to the binaries in `extensions/x64/` are picked up.
 
-Update: Newer improvements will no longer be listed here, they are too numerous to list now. Check the commit history here and in submodules like sourcepawn and safetyhook for details.
+Core
+- `DisableAutoExecConfig` option in core.cfg skips creating and exec'ing per-plugin auto-configs, for servers that share one game folder.
+- MAXCLIENTS raised to 256.
+- Fixed a double free and handle-table corruption when a handle is cloned while it is being destroyed (reachable through menu cancellation).
+- Fixed a crash on shutdown when plugin unloads requested in OnMapEnd were left pending.
+
+Bintools (x64)
+- Fixed by-value object classification, argument passing for objects larger than 16 bytes, float returns overflowing the return buffer, 16-byte integer returns, and unaligned float loads. Added an x64 test suite.
+
+MySQL
+- Connection charset is utf8mb4 and stays that way after the driver auto-reconnects.
+- Builds with the MariaDB connector and runs on OpenSSL 3 hosts.
+
+SourcePawn ([skial-com/sourcepawn](https://github.com/skial-com/sourcepawn), `skial` branch)
+- Retags such as `Float:x` and `view_as<float>(x)` now produce float math; they used to silently do integer math (`w *= Float:GetNativeCell(1)` gave 0.0).
+- Heap arrays passed to sized parameters of scripted functions (rows of 2D arrays, string literals) are flattened instead of corrupting the heap.
+- Copyback into a callback's sized array or string parameter no longer overwrites the rest of the native's buffer.
+- Ternaries whose arms differ in width (int/int64, float/double) compile correctly.
+
+SafetyHook ([skial-com/safetyhook](https://github.com/skial-com/safetyhook))
+- Pages stay executable while `trap_threads` patches them on Linux; upstream's read-write-only window crashes multithreaded servers.
+- Nearby allocation reads `/proc/self/maps` once per search instead of once per candidate.
+
+Upstream SourceMod and SourcePawn are merged regularly. The commit history here and in the submodules has the full details.
 
 General
 -------
@@ -34,20 +58,6 @@ General
 - [Stable builds](http://www.sourcemod.net/downloads.php?branch=stable): The latest stable SourceMod releases
 - [Dev builds](http://www.sourcemod.net/downloads.php?branch=dev): Builds of recent development versions
  
-Development
------------
-- [Issue tracker](https://github.com/alliedmodders/sourcemod/issues): Issues that require back and forth communication
-- [Building SourceMod](https://wiki.alliedmods.net/Building_SourceMod): Instructions on how to build SourceMod itself using [AMBuild](https://github.com/alliedmodders/ambuild)
-- [SourcePawn scripting](https://wiki.alliedmods.net/Category:SourceMod_Scripting): SourcePawn examples and introduction to the language
-- [SourceMod plugin API](https://sm.alliedmods.net/new-api): Online SourceMod plugin API reference generated from the include files
-- [SourceMod extension development](https://wiki.alliedmods.net/Category:SourceMod_Development): C++ examples and introduction to various extension interfaces
-- [Translation project](https://github.com/orgs/alliedmodders/projects/1): Help [translate SourceMod](https://wiki.alliedmods.net/Translations_(SourceMod_Scripting)) into your language
-
-Contact
--------
-- Connect with us on [GameSurge](https://gamesurge.net) IRC in #sourcemod
-- Alternatively feel free to join our [Discord](https://discord.gg/HgZctSS) server
-
 License
 -------
 SourceMod is licensed under the GNU General Public License version 3. Special exceptions are outlined in the LICENSE.txt file inside of the licenses folder.
